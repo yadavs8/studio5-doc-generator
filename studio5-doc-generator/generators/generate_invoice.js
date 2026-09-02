@@ -65,7 +65,10 @@ payload.sections.forEach((sec, si) => {
     ]
   });
 
-  sectionBlocks.push(new Paragraph({ children: [new TextRun({ text: sec.name || `Section ${si+1}`, bold: true, size: 22 })], spacing: { before: 200, after: 80 } }));
+  const hasNestedDuplicate = sec.items.some(it => it.sub_items && it.sub_items.length);
+  if (sec.name && sec.name.trim() && !hasNestedDuplicate) {
+    sectionBlocks.push(new Paragraph({ children: [new TextRun({ text: sec.name, bold: true, size: 22 })], spacing: { before: 200, after: 80 } }));
+  }
   sectionBlocks.push(new Table({ width: { size: totalWidth, type: WidthType.DXA }, columnWidths: colWidths, rows: [headerRow, ...itemRows, totalRow] }));
 });
 
