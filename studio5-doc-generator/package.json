@@ -1,0 +1,13 @@
+{
+  "name": "studio5-doc-generator-backend",
+  "version": "1.0.0",
+  "description": "Instant Word document generator API for Studio5 Interiors (PO, Proforma Invoice, Invoice, Delivery Challan)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "docx": "^9.0.0"
+  }
+}
