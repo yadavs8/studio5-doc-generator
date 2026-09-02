@@ -113,7 +113,8 @@ payload.sections.forEach((sec, si) => {
     ]
   });
 
-  if (sec.name && sec.name.trim()) {
+  const hasNestedDuplicate = sec.items.some(it => it.sub_items && it.sub_items.length);
+  if (sec.name && sec.name.trim() && !hasNestedDuplicate) {
     sectionBlocks.push(new Paragraph({ children: [new TextRun({ text: sec.name, bold: true, size: 22 })], spacing: { before: 200, after: 80 } }));
   }
   sectionBlocks.push(new Table({ width: { size: totalWidth, type: WidthType.DXA }, columnWidths: colWidths, rows: [headerRow, ...itemRows, totalRow] }));
@@ -210,7 +211,7 @@ const doc = new Document({
       new Paragraph({ text: "" }), new Paragraph({ text: "" }),
       new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "(Authorized Signatory)", size: 18 })] }),
       new Paragraph({ text: "" }),
-      new Paragraph({ children: [new TextRun({ text: `Payment Terms: ${payload.payment_terms}`, size: 18 })] }),
+      ...(payload.payment_terms ? [new Paragraph({ children: [new TextRun({ text: `Payment Terms: ${payload.payment_terms}`, size: 18 })] })] : []),
       new Paragraph({ children: [new TextRun({ text: "Declaration: We declare that this Proforma Invoice shows the actual price of the goods described and that all particulars are true & correct.", size: 18 })] }),
     ]
   }]
