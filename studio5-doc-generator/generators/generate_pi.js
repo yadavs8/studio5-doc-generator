@@ -42,55 +42,28 @@ payload.sections.forEach((sec, si) => {
   });
 
   const itemRows = [];
-  let srNo = 0;
   const totalCols = hasRooms ? 7 : 6;
   const fullSpanWidth = colWidths.reduce((a, b) => a + b, 0);
-  sec.items.forEach((it) => {
-    if (it.sub_items && it.sub_items.length) {
-      srNo++;
-      const remainingWidth = fullSpanWidth - colWidths[0];
-      const headerCells = [
-        cell(srNo, { width: colWidths[0], align: AlignmentType.CENTER }),
+  const useNamedHeaderMode = !!(sec.name && sec.name.trim());
+
+  if (useNamedHeaderMode) {
+    // Row "1" = the section name itself, spanning the full width (bold)
+    const remainingWidth = fullSpanWidth - colWidths[0];
+    itemRows.push(new TableRow({
+      children: [
+        cell(1, { width: colWidths[0], align: AlignmentType.CENTER }),
         new TableCell({
           columnSpan: totalCols - 1,
           width: { size: remainingWidth, type: WidthType.DXA },
-          children: [new Paragraph({ children: [new TextRun({ text: it.particulars, bold: true, size: 20 })] })]
+          children: [new Paragraph({ children: [new TextRun({ text: sec.name, bold: true, size: 20 })] })]
         }),
-      ];
-      itemRows.push(new TableRow({ children: headerCells }));
-      it.sub_items.forEach((sub, si) => {
-        const letter = String.fromCharCode(97 + si); // a, b, c, d...
-        const subCells = [
-          cell(letter, { width: colWidths[0], align: AlignmentType.CENTER }),
-          cell(sub.particulars, { width: colWidths[1] }),
-          cell(sub.uom || "", { width: colWidths[2], align: AlignmentType.CENTER }),
-          cell(sub.qty || "", { width: colWidths[3], align: AlignmentType.CENTER }),
-          cell(fmt(sub.rate), { width: colWidths[4], align: AlignmentType.RIGHT }),
-        ];
-        if (hasRooms) subCells.push(cell(sub.rooms || "", { width: colWidths[5], align: AlignmentType.CENTER }));
-        subCells.push(cell(fmt(sub.amount), { width: colWidths[hasRooms ? 6 : 5], align: AlignmentType.RIGHT }));
-        itemRows.push(new TableRow({ children: subCells }));
-      });
-      const totalRate = it.sub_items.reduce((sum, s) => sum + (Number(s.rate) || 0), 0);
-      const preRateWidth = colWidths.slice(0, 4).reduce((a, b) => a + b, 0);
-      const trailingWidth = hasRooms ? colWidths[5] + colWidths[6] : colWidths[5];
-      itemRows.push(new TableRow({
-        children: [
-          new TableCell({
-            columnSpan: 4, width: { size: preRateWidth, type: WidthType.DXA },
-            children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Total Rate per Room", bold: true, size: 20 })] })]
-          }),
-          cell(fmt(totalRate), { width: colWidths[4], align: AlignmentType.RIGHT, bold: true }),
-          new TableCell({
-            columnSpan: hasRooms ? 2 : 1, width: { size: trailingWidth, type: WidthType.DXA },
-            children: [new Paragraph({ text: "" })]
-          }),
-        ]
-      }));
-    } else {
-      srNo++;
+      ]
+    }));
+    // Items become lettered sub-rows: a, b, c, d...
+    sec.items.forEach((it, i) => {
+      const letter = String.fromCharCode(97 + i);
       const cells = [
-        cell(srNo, { width: colWidths[0], align: AlignmentType.CENTER }),
+        cell(letter, { width: colWidths[0], align: AlignmentType.CENTER }),
         cell(it.particulars, { width: colWidths[1] }),
         cell(it.uom, { width: colWidths[2], align: AlignmentType.CENTER }),
         cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
@@ -99,8 +72,39 @@ payload.sections.forEach((sec, si) => {
       if (hasRooms) cells.push(cell(it.rooms, { width: colWidths[5], align: AlignmentType.CENTER }));
       cells.push(cell(fmt(it.amount), { width: colWidths[hasRooms ? 6 : 5], align: AlignmentType.RIGHT }));
       itemRows.push(new TableRow({ children: cells }));
-    }
-  });
+    });
+    // Total Rate per Room row (sum of the lettered items' rates)
+    const totalRate = sec.items.reduce((sum, it) => sum + (Number(it.rate) || 0), 0);
+    const preRateWidth = colWidths.slice(0, 4).reduce((a, b) => a + b, 0);
+    const trailingWidth = hasRooms ? colWidths[5] + colWidths[6] : colWidths[5];
+    itemRows.push(new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: 4, width: { size: preRateWidth, type: WidthType.DXA },
+          children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Total Rate per Room", bold: true, size: 20 })] })]
+        }),
+        cell(fmt(totalRate), { width: colWidths[4], align: AlignmentType.RIGHT, bold: true }),
+        new TableCell({
+          columnSpan: hasRooms ? 2 : 1, width: { size: trailingWidth, type: WidthType.DXA },
+          children: [new Paragraph({ text: "" })]
+        }),
+      ]
+    }));
+  } else {
+    // No section name — plain flat numbering, no header row, no Total Rate row
+    sec.items.forEach((it, i) => {
+      const cells = [
+        cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
+        cell(it.particulars, { width: colWidths[1] }),
+        cell(it.uom, { width: colWidths[2], align: AlignmentType.CENTER }),
+        cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
+        cell(fmt(it.rate), { width: colWidths[4], align: AlignmentType.RIGHT }),
+      ];
+      if (hasRooms) cells.push(cell(it.rooms, { width: colWidths[5], align: AlignmentType.CENTER }));
+      cells.push(cell(fmt(it.amount), { width: colWidths[hasRooms ? 6 : 5], align: AlignmentType.RIGHT }));
+      itemRows.push(new TableRow({ children: cells }));
+    });
+  }
 
   const totalSpan = hasRooms ? 6 : 5;
   const totalRow = new TableRow({
@@ -113,10 +117,7 @@ payload.sections.forEach((sec, si) => {
     ]
   });
 
-  const hasNestedDuplicate = sec.items.some(it => it.sub_items && it.sub_items.length);
-  if (sec.name && sec.name.trim() && !hasNestedDuplicate) {
-    sectionBlocks.push(new Paragraph({ children: [new TextRun({ text: sec.name, bold: true, size: 22 })], spacing: { before: 200, after: 80 } }));
-  }
+  // No separate heading paragraph above the table — the name (if any) is now row "1" itself.
   sectionBlocks.push(new Table({ width: { size: totalWidth, type: WidthType.DXA }, columnWidths: colWidths, rows: [headerRow, ...itemRows, totalRow] }));
 });
 
