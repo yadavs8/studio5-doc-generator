@@ -1,9 +1,9 @@
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
-  WidthType, AlignmentType, BorderStyle, ShadingType
+  WidthType, AlignmentType, BorderStyle, ShadingType, ImageRun
 } = require("docx");
 
-async function generateChallan(payload) {
+async function generateChallan(payload, logoBuffer, stampBuffer) {
 
 function cell(text, opts = {}) {
   return new TableCell({
@@ -107,7 +107,22 @@ const doc = new Document({
           new TableRow({ children: [
             cell("Name / Signature: __________________", { width: 3435, size: 18 }),
             cell("Name / Signature: __________________", { width: 3435, size: 18 }),
-            cell("Name / Signature: __________________", { width: 3436, size: 18 }),
+            stampBuffer
+              ? new TableCell({
+                  width: { size: 3436, type: WidthType.DXA },
+                  children: [
+                    new Paragraph({
+                      children: [
+                        new ImageRun({
+                          data: stampBuffer,
+                          type: "png",
+                          transformation: { width: 85, height: 79 }
+                        })
+                      ]
+                    })
+                  ]
+                })
+              : cell("Name / Signature: __________________", { width: 3436, size: 18 }),
           ]}),
           new TableRow({ children: [
             cell("Date: __________________", { width: 3435, size: 18 }),

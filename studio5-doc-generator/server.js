@@ -18,6 +18,9 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "5mb" }));
 
 const logoBuffer = fs.readFileSync(path.join(__dirname, "assets", "logo.png"));
+const stampBuffer = fs.existsSync(path.join(__dirname, "assets", "stamp.png"))
+  ? fs.readFileSync(path.join(__dirname, "assets", "stamp.png"))
+  : null;
 
 function sendDocx(res, buffer, filename) {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
@@ -27,7 +30,7 @@ function sendDocx(res, buffer, filename) {
 
 app.post("/generate/purchase-order", async (req, res) => {
   try {
-    const buf = await generatePO(req.body, logoBuffer);
+    const buf = await generatePO(req.body, logoBuffer, stampBuffer);
     sendDocx(res, buf, "Purchase_Order.docx");
   } catch (e) {
     console.error(e);
@@ -37,7 +40,7 @@ app.post("/generate/purchase-order", async (req, res) => {
 
 app.post("/generate/proforma-invoice", async (req, res) => {
   try {
-    const buf = await generatePI(req.body, logoBuffer);
+    const buf = await generatePI(req.body, logoBuffer, stampBuffer);
     sendDocx(res, buf, "Proforma_Invoice.docx");
   } catch (e) {
     console.error(e);
@@ -47,7 +50,7 @@ app.post("/generate/proforma-invoice", async (req, res) => {
 
 app.post("/generate/invoice", async (req, res) => {
   try {
-    const buf = await generateInvoice(req.body, logoBuffer);
+    const buf = await generateInvoice(req.body, logoBuffer, stampBuffer);
     sendDocx(res, buf, "Invoice.docx");
   } catch (e) {
     console.error(e);
@@ -57,7 +60,7 @@ app.post("/generate/invoice", async (req, res) => {
 
 app.post("/generate/challan", async (req, res) => {
   try {
-    const buf = await generateChallan(req.body);
+    const buf = await generateChallan(req.body, logoBuffer, stampBuffer);
     sendDocx(res, buf, "Delivery_Challan.docx");
   } catch (e) {
     console.error(e);

@@ -4,7 +4,7 @@ const {
   ImageRun, PageBorderDisplay, PageBorderOffsetFrom, PageBorderZOrder
 } = require("docx");
 
-async function generatePI(payload, logoBuffer) {
+async function generatePI(payload, logoBuffer, stampBuffer) {
 
 function fmt(n) {
   return Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -207,9 +207,19 @@ const doc = new Document({
       new Paragraph({ children: [new TextRun({ text: `Account No.: ${payload.bank.account}`, size: 18 })] }),
       new Paragraph({ children: [new TextRun({ text: `IFSC Code: ${payload.bank.ifsc}`, size: 18 })] }),
       new Paragraph({ children: [new TextRun({ text: `Branch: ${payload.bank.branch}`, size: 18 })] }),
-      new Paragraph({ text: "" }),
       new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "For STUDIO5 INTERIORS PRIVATE LIMITED", size: 20 })] }),
-      new Paragraph({ text: "" }), new Paragraph({ text: "" }),
+      stampBuffer
+        ? new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            children: [
+              new ImageRun({
+                data: stampBuffer,
+                type: "png",
+                transformation: { width: 90, height: 84 }
+              })
+            ]
+          })
+        : new Paragraph({ text: "" }),
       new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "(Authorized Signatory)", size: 18 })] }),
       new Paragraph({ text: "" }),
       ...(payload.payment_terms ? [new Paragraph({ children: [new TextRun({ text: `Payment Terms: ${payload.payment_terms}`, size: 18 })] })] : []),

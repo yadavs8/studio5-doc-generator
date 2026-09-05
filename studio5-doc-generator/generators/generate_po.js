@@ -4,7 +4,7 @@ const {
   ImageRun, PageBorderDisplay, PageBorderOffsetFrom, PageBorderZOrder
 } = require("docx");
 
-async function generatePO(payload, logoBuffer) {
+async function generatePO(payload, logoBuffer, stampBuffer) {
 
 const TERMS = [
 ["1. Payment Terms", true],
@@ -175,7 +175,17 @@ const doc = new Document({
         rows: [ new TableRow({ children: [
           new TableCell({ width: { size: 5153, type: WidthType.DXA }, children: [
             new Paragraph({ children: [new TextRun({ text: `For ${addr.name}`, size: 20 })] }),
-            new Paragraph({ text: "" }), new Paragraph({ text: "" }),
+            stampBuffer
+              ? new Paragraph({
+                  children: [
+                    new ImageRun({
+                      data: stampBuffer,
+                      type: "png",
+                      transformation: { width: 90, height: 84 }
+                    })
+                  ]
+                })
+              : new Paragraph({ text: "" }),
             new Paragraph({ children: [new TextRun({ text: "(Authorized Signatory)", size: 18 })] }),
           ]}),
           new TableCell({ width: { size: 5153, type: WidthType.DXA }, children: [
