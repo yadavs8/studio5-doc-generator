@@ -59,37 +59,135 @@ function cell(text, opts = {}) {
 }
 
 const colWidths = [500, 3200, 900, 700, 700, 900, 1200]; // Sr, Particulars, HSN, UOM, Qty, Rate, Amount
-
-const headerRow = new TableRow({
-  children: ["Sr. No.", "Particulars", "HSN/SAC", "UOM", "Qty", "Rate", "Amount"].map((h, i) =>
-    cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
-  )
-});
-
-const itemRows = payload.items.map((it, i) => new TableRow({
-  children: [
-    cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
-    cell(it.particulars, { width: colWidths[1] }),
-    cell(it.hsn, { width: colWidths[2], align: AlignmentType.CENTER }),
-    cell(it.uom, { width: colWidths[3], align: AlignmentType.CENTER }),
-    cell(it.qty, { width: colWidths[4], align: AlignmentType.CENTER }),
-    cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
-    cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
-  ]
-}));
-
-const totalWidth = colWidths.slice(0, 6).reduce((a, b) => a + b, 0);
+const totalWidth = colWidths.reduce((a, b) => a + b, 0);
 
 function totalsRow(label, value, bold = false) {
   return new TableRow({
     children: [
       new TableCell({
-        columnSpan: 6, width: { size: totalWidth, type: WidthType.DXA },
+        columnSpan: 6, width: { size: colWidths.slice(0, 6).reduce((a, b) => a + b, 0), type: WidthType.DXA },
         children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: label, bold })] })]
       }),
       cell(fmt(value), { width: colWidths[6], align: AlignmentType.RIGHT, bold })
     ]
   });
+}
+
+const tableBlocks = [];
+
+if (payload.sections && Array.isArray(payload.sections) && payload.sections.length > 0) {
+  payload.sections.forEach((sec, si) => {
+    const secHeaderRow = new TableRow({
+      children: ["Sr. No.", "Particulars", "HSN/SAC", "UOM", "Qty", "Rate", "Amount"].map((h, i) =>
+        cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
+      )
+    });
+
+    const secRows = [secHeaderRow];
+    const hasName = sec.name && sec.name.trim();
+
+    if (hasName) {
+      // Section header row spanning columns
+      secRows.push(new TableRow({
+        children: [
+          cell(si + 1, { width: colWidths[0], align: AlignmentType.CENTER, bold: true }),
+          new TableCell({
+            columnSpan: 6,
+            width: { size: colWidths.slice(1).reduce((a, b) => a + b, 0), type: WidthType.DXA },
+            children: [new Paragraph({ children: [new TextRun({ text: sec.name, bold: true, size: 20 })] })]
+          })
+        ]
+      }));
+
+      (sec.items || []).forEach((it, i) => {
+        const letter = String.fromCharCode(97 + i);
+        secRows.push(new TableRow({
+          children: [
+            cell(letter, { width: colWidths[0], align: AlignmentType.CENTER }),
+            cell(it.particulars, { width: colWidths[1] }),
+            cell(it.hsn || "9403", { width: colWidths[2], align: AlignmentType.CENTER }),
+            cell(it.uom || "nos", { width: colWidths[3], align: AlignmentType.CENTER }),
+            cell(it.qty, { width: colWidths[4], align: AlignmentType.CENTER }),
+            cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
+            cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
+          ]
+        }));
+      });
+
+      const secTotal = (sec.items || []).reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+      secRows.push(new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 6,
+            width: { size: colWidths.slice(0, 6).reduce((a, b) => a + b, 0), type: WidthType.DXA },
+            children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `Sub-Total (${sec.name})`, bold: true, size: 20 })] })]
+          }),
+          cell(fmt(secTotal), { width: colWidths[6], align: AlignmentType.RIGHT, bold: true })
+        ]
+      }));
+    } else {
+      (sec.items || []).forEach((it, i) => {
+        secRows.push(new TableRow({
+          children: [
+            cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
+            cell(it.particulars, { width: colWidths[1] }),
+            cell(it.hsn || "9403", { width: colWidths[2], align: AlignmentType.CENTER }),
+            cell(it.uom || "nos", { width: colWidths[3], align: AlignmentType.CENTER }),
+            cell(it.qty, { width: colWidths[4], align: AlignmentType.CENTER }),
+            cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
+            cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
+          ]
+        }));
+      });
+    }
+
+    tableBlocks.push(new Table({
+      width: { size: 10306, type: WidthType.DXA },
+      columnWidths: colWidths,
+      rows: secRows
+    }));
+    tableBlocks.push(new Paragraph({ text: "" }));
+  });
+
+  tableBlocks.push(new Table({
+    width: { size: 10306, type: WidthType.DXA },
+    columnWidths: colWidths,
+    rows: [
+      totalsRow("Sub-Total", payload.sub_total, true),
+      totalsRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false),
+      totalsRow("GRAND TOTAL", payload.grand_total, true),
+    ]
+  }));
+} else {
+  const headerRow = new TableRow({
+    children: ["Sr. No.", "Particulars", "HSN/SAC", "UOM", "Qty", "Rate", "Amount"].map((h, i) =>
+      cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
+    )
+  });
+
+  const itemRows = (payload.items || []).map((it, i) => new TableRow({
+    children: [
+      cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
+      cell(it.particulars, { width: colWidths[1] }),
+      cell(it.hsn || "9403", { width: colWidths[2], align: AlignmentType.CENTER }),
+      cell(it.uom || "nos", { width: colWidths[3], align: AlignmentType.CENTER }),
+      cell(it.qty, { width: colWidths[4], align: AlignmentType.CENTER }),
+      cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
+      cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
+    ]
+  }));
+
+  tableBlocks.push(new Table({
+    width: { size: 10306, type: WidthType.DXA },
+    columnWidths: colWidths,
+    rows: [
+      headerRow,
+      ...itemRows,
+      totalsRow("Sub-Total", payload.sub_total, true),
+      totalsRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false),
+      totalsRow("GRAND TOTAL", payload.grand_total, true),
+    ]
+  }));
 }
 
 const addr = payload.issuing_address;
@@ -153,16 +251,7 @@ const doc = new Document({
       ] : []),
       new Paragraph({ children: [new TextRun({ text: "DELIVER TO (SITE ADDRESS)", bold: true, size: 20 })] }),
       new Paragraph({ children: [new TextRun({ text: `Site / Project: ${payload.site}`, size: 20 })] }),
-      new Paragraph({ text: "" }),
-      new Table({
-        width: { size: 10306, type: WidthType.DXA },
-        columnWidths: colWidths,
-        rows: [headerRow, ...itemRows,
-          totalsRow("Sub-Total", payload.sub_total, true),
-          totalsRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false),
-          totalsRow("GRAND TOTAL", payload.grand_total, true),
-        ]
-      }),
+      ...tableBlocks,
       new Paragraph({ text: "" }),
       new Paragraph({ children: [new TextRun({ text: `Amount in words: ${payload.amount_in_words}`, italics: true, size: 20 })] }),
       new Paragraph({ text: "" }),
