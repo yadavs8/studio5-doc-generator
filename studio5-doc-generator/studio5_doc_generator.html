@@ -101,6 +101,48 @@
     table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .tabs { padding-bottom: 6px; }
   }
+  /* Modal and Catalog styles */
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6); z-index: 9999;
+    align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: #fff; border-radius: 12px; max-width: 720px; width: 100%;
+    max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.3); border: 1px solid var(--border);
+  }
+  .modal-header {
+    padding: 14px 18px; background: var(--bg); border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-header h3 { margin: 0; font-size: 16px; color: var(--accent); display: flex; align-items: center; gap: 6px; }
+  .modal-close { cursor: pointer; font-size: 20px; font-weight: 700; color: var(--muted); border: none; background: none; padding: 4px 8px; line-height: 1; }
+  .modal-body { padding: 16px 18px; overflow-y: auto; flex: 1; }
+  .modal-footer {
+    padding: 12px 18px; border-top: 1px solid var(--border); background: var(--bg);
+    display: flex; justify-content: flex-end; gap: 10px; align-items: center;
+  }
+  .cat-pill {
+    display: inline-block; padding: 6px 12px; border-radius: 18px; font-size: 12px;
+    font-weight: 600; cursor: pointer; background: #fff; border: 1px solid var(--border);
+    color: var(--muted); margin: 0 4px 6px 0; transition: all 0.15s ease; user-select: none;
+  }
+  .cat-pill.active {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  .catalog-item-card {
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+    background: #fff; gap: 10px; transition: border-color 0.15s ease;
+  }
+  .catalog-item-card:hover { border-color: var(--accent); background: #faf9f7; }
+  .scan-dropzone {
+    border: 2px dashed #93c5fd; border-radius: 10px; padding: 24px; text-align: center;
+    background: #f8fafc; cursor: pointer; transition: all 0.2s ease;
+  }
+  .scan-dropzone:hover { background: #eff6ff; border-color: #3b82f6; }
 </style>
 </head>
 <body>
@@ -184,6 +226,60 @@
     </div>
 
     <div class="card">
+      <h2>🤖 Google Gemini AI Key (for Site Sheet Scanner)</h2>
+      <p style="font-size:13px; color:var(--muted); margin-top:0;">Powers the <strong>📷 Scan Site Sheet / Diary</strong> feature. Get a free API key from Google AI Studio (<a href="https://aistudio.google.com" target="_blank" style="color:var(--accent); font-weight:600;">aistudio.google.com</a>). It is remembered securely on this device, or can be set via <code>GEMINI_API_KEY</code> on Render.</p>
+      <label>Gemini API Key</label>
+      <input id="gemini-api-key" type="password" placeholder="AIzaSy...">
+      <div class="lib-actions">
+        <button class="btn small" onclick="saveGeminiKey()">Save Key</button>
+        <button class="btn secondary small" onclick="testGeminiKey()">Test Key</button>
+      </div>
+      <span class="status" id="gemini-key-status"></span>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h2 style="margin:0;">📦 Interior Items Catalog (Quick-Pick &amp; Autocomplete)</h2>
+        <div style="display:flex; gap:8px;">
+          <button class="btn secondary small" onclick="showAddCatalogItem()">+ Add new item</button>
+          <button class="btn secondary small" onclick="resetCatalogToDefaults()" style="color:#b0413e; border-color:#b0413e;">Reset to defaults</button>
+        </div>
+      </div>
+      <p style="font-size:13px; color:var(--muted); margin:6px 0 12px;">Standard Studio5 specifications with default UOM and unit rates. Available via the <strong>⚡ Quick Pick Catalog</strong> button and auto-completes as you type in Particulars.</p>
+
+      <div id="add-catalog-form" style="display:none; margin-bottom:14px; padding:14px; border:1px solid var(--border); border-radius:8px; background:var(--accent-light);">
+        <h3 style="margin:0 0 10px; font-size:13px; color:var(--accent);">Add New Item to Catalog</h3>
+        <div class="row2">
+          <div>
+            <label>Category</label>
+            <select id="new-cat-category">
+              <option value="False Ceiling &amp; Drywall">False Ceiling &amp; Drywall</option>
+              <option value="Woodwork &amp; Furniture">Woodwork &amp; Furniture</option>
+              <option value="Painting &amp; Polishing">Painting &amp; Polishing</option>
+              <option value="Flooring &amp; Tiling">Flooring &amp; Tiling</option>
+              <option value="Electrical &amp; Services">Electrical &amp; Services</option>
+              <option value="Other / General">Other / General</option>
+            </select>
+          </div>
+          <div class="row2">
+            <div><label>UOM</label><input id="new-cat-uom" placeholder="sqft, rft, nos" value="sqft"></div>
+            <div><label>Default Rate (₹)</label><input id="new-cat-rate" type="number" placeholder="125"></div>
+          </div>
+        </div>
+        <label>Particulars (Full Specification)</label>
+        <textarea id="new-cat-particulars" placeholder="e.g. Providing &amp; fixing 12.5mm Gypsum board false ceiling with G.I. channels..."></textarea>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button class="btn small" onclick="saveNewCatalogItem()">Save to Catalog</button>
+          <button class="btn secondary small" onclick="hideAddCatalogItem()">Cancel</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:10px;" id="lib-catalog-filters"></div>
+      <div id="lib-catalog-list" style="max-height:360px; overflow-y:auto;"></div>
+    </div>
+
+
+    <div class="card">
       <h2>Proforma Invoice / Invoice — Nested BOQ Item Format</h2>
       <p style="font-size:13px; color:var(--muted); margin-top:0;">Use this when one work description covers several priced components (e.g. a room-furniture package). Confirmed final format:</p>
       <table>
@@ -248,7 +344,10 @@
     </div>
 
     <div class="card">
-      <h2>4. Sections &amp; Line Items</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+        <h2 style="margin:0;">4. Sections &amp; Line Items</h2>
+        <button type="button" class="btn secondary small" onclick="openScanModal('po')" style="background:#fef3c7; color:#92400e; border-color:#f59e0b; font-weight:700;">📷 Scan Site Sheet / Diary</button>
+      </div>
       <p style="font-size:13px; color:var(--muted); margin-top:0;">Add one or more sections. <strong>If you type a Section Name</strong>, it automatically becomes row "1" in that section's table, and items become lettered sub-items (a, b, c...) underneath it. <strong>Leave Section Name blank</strong> for a plain numbered list (1, 2, 3...).</p>
       <div id="po-sections"></div>
       <button type="button" class="btn secondary small" onclick="addPOSection()">+ Add section</button>
@@ -315,7 +414,10 @@
     </div>
 
     <div class="card">
-      <h2>3. Sections</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+        <h2 style="margin:0;">3. Sections</h2>
+        <button type="button" class="btn secondary small" onclick="openScanModal('pi')" style="background:#fef3c7; color:#92400e; border-color:#f59e0b; font-weight:700;">📷 Scan Site Sheet / Diary</button>
+      </div>
       <p style="font-size:13px; color:var(--muted); margin-top:0;">Add one or more sections. <strong>If you type a Section Name</strong>, it automatically becomes row "1" in that section's table, and your items become lettered sub-items (a, b, c...) underneath it. <strong>Leave Section Name blank</strong> for a plain numbered list (1, 2, 3...) instead. Turn on "Per-room pricing" if amount = Qty × Rate × No. of Rooms; leave off for simple Qty × Rate.</p>
       <div id="pi-sections"></div>
       <button class="btn secondary small" onclick="addPISection()">+ Add section</button>
@@ -386,7 +488,10 @@
     </div>
 
     <div class="card">
-      <h2>3. Sections</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+        <h2 style="margin:0;">3. Sections</h2>
+        <button type="button" class="btn secondary small" onclick="openScanModal('inv')" style="background:#fef3c7; color:#92400e; border-color:#f59e0b; font-weight:700;">📷 Scan Site Sheet / Diary</button>
+      </div>
       <p style="font-size:13px; color:var(--muted); margin-top:0;">Add one or more sections. <strong>If you type a Section Name</strong>, it automatically becomes row "1" in that section's table, and your items become lettered sub-items (a, b, c...) underneath it. <strong>Leave Section Name blank</strong> for a plain numbered list (1, 2, 3...) instead. Turn on "Per-room pricing" if amount = Qty × Rate × No. of Rooms; leave off for simple Qty × Rate.</p>
       <div id="inv-sections"></div>
       <button class="btn secondary small" onclick="addINVSection()">+ Add section</button>
@@ -1317,8 +1422,9 @@ function addPOSection(prefillName, prefillItems) {
       <tbody></tbody>
     </table>
     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; flex-wrap:wrap; gap:8px;">
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; align-items:center;">
         <button type="button" class="btn secondary small" onclick="addPOItemRow('${sid}')">+ Add item</button>
+        <button type="button" class="btn secondary small" style="color:#0284c7; border-color:#0284c7; font-weight:600;" onclick="openCatalogPicker('${sid}', 'po')">⚡ Quick Pick Catalog</button>
       </div>
       <div style="display:flex; align-items:center; gap:12px;">
         <div class="footer-note" style="margin:0;">Section Sub-Total: <span class="po-sec-subtotal" style="font-weight:700; color:#0f172a;">0.00</span></div>
@@ -1346,7 +1452,7 @@ function addPOItemRow(sid, prefill) {
   const tr = document.createElement('tr');
   const p = prefill || {};
   tr.innerHTML = `
-    <td><input class="f-part" value="${escapeHtml(p.particulars || '')}"></td>
+    <td><input class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || '')}" oninput="handleParticularsInput(this)"></td>
     <td><input class="f-hsn" value="${escapeHtml(p.hsn || '9403')}" style="width:60px;"></td>
     <td><input class="f-uom" value="${escapeHtml(p.uom || 'nos')}" style="width:55px;"></td>
     <td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:55px;" onchange="recalcPO()"></td>
@@ -1524,7 +1630,10 @@ function addPISection(prefillName, prefillRooms, prefillItems) {
       <tbody></tbody>
     </table>
     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; flex-wrap:wrap; gap:8px;">
-      <button type="button" class="btn secondary small" onclick="addPIItemRow('${sid}')">+ Add item</button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button type="button" class="btn secondary small" onclick="addPIItemRow('${sid}')">+ Add item</button>
+        <button type="button" class="btn secondary small" style="color:#0284c7; border-color:#0284c7; font-weight:600;" onclick="openCatalogPicker('${sid}', 'pi')">⚡ Quick Pick Catalog</button>
+      </div>
       <div style="display:flex; align-items:center; gap:12px;">
         <div class="footer-note" style="margin:0;">Section Sub-Total: <span class="pi-sec-subtotal" style="font-weight:700; color:#0f172a;">0.00</span></div>
         <button type="button" class="btn secondary small" onclick="document.getElementById('${sid}').remove(); recalcPI(); updateSectionCopyDropdowns('pi');" style="color:#b0413e; border-color:#b0413e;">Remove section</button>
@@ -1554,8 +1663,8 @@ function rebuildPIRow(tr, hasRooms, recalcFn) {
   const rooms = tr.querySelector('.f-rooms')?.value || '';
   const docType = recalcFn === 'recalcPI' ? 'pi' : 'inv';
   tr.innerHTML = hasRooms
-    ? `<td><input class="f-part" value="${escapeHtml(part)}"></td><td><input class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td><input class="f-rooms" type="number" value="${rooms}" style="width:55px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`
-    : `<td><input class="f-part" value="${escapeHtml(part)}"></td><td><input class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`;
+    ? `<td><input class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td><input class="f-rooms" type="number" value="${rooms}" style="width:55px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`
+    : `<td><input class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`;
 }
 
 function renderPISectionTable(sid) {
@@ -1577,8 +1686,8 @@ function addPIItemRow(sid, prefill) {
   const tr = document.createElement('tr');
   const p = prefill || {};
   tr.innerHTML = hasRooms
-    ? `<td><input class="f-part" value="${escapeHtml(p.particulars || '')}"></td><td><input class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`
-    : `<td><input class="f-part" value="${escapeHtml(p.particulars || '')}"></td><td><input class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`;
+    ? `<td><input class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || '')}" oninput="handleParticularsInput(this)"></td><td><input class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`
+    : `<td><input class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || '')}" oninput="handleParticularsInput(this)"></td><td><input class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`;
   tbody.appendChild(tr);
   recalcPI();
   updateSectionCopyDropdowns('pi');
@@ -1725,7 +1834,10 @@ function addINVSection(prefillName, prefillRooms, prefillItems) {
       <tbody></tbody>
     </table>
     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; flex-wrap:wrap; gap:8px;">
-      <button type="button" class="btn secondary small" onclick="addINVItemRow('${sid}')">+ Add item</button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button type="button" class="btn secondary small" onclick="addINVItemRow('${sid}')">+ Add item</button>
+        <button type="button" class="btn secondary small" style="color:#0284c7; border-color:#0284c7; font-weight:600;" onclick="openCatalogPicker('${sid}', 'inv')">⚡ Quick Pick Catalog</button>
+      </div>
       <div style="display:flex; align-items:center; gap:12px;">
         <div class="footer-note" style="margin:0;">Section Sub-Total: <span class="inv-sec-subtotal" style="font-weight:700; color:#0f172a;">0.00</span></div>
         <button type="button" class="btn secondary small" onclick="document.getElementById('${sid}').remove(); recalcINV(); updateSectionCopyDropdowns('inv');" style="color:#b0413e; border-color:#b0413e;">Remove section</button>
@@ -1766,8 +1878,8 @@ function addINVItemRow(sid, prefill) {
   const tr = document.createElement('tr');
   const p = prefill || {};
   tr.innerHTML = hasRooms
-    ? `<td><input class="f-part" value="${escapeHtml(p.particulars || '')}"></td><td><input class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`
-    : `<td><input class="f-part" value="${escapeHtml(p.particulars || '')}"></td><td><input class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`;
+    ? `<td><input class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || '')}" oninput="handleParticularsInput(this)"></td><td><input class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`
+    : `<td><input class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || '')}" oninput="handleParticularsInput(this)"></td><td><input class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`;
   tbody.appendChild(tr);
   recalcINV();
   updateSectionCopyDropdowns('inv');
@@ -1970,7 +2082,464 @@ document.querySelectorAll('.tab').forEach(tab => {
   });
 });
 
+// --- CATALOG & SCAN SITE SHEET FUNCTIONALITY ---
+const DEFAULT_CATALOG_ITEMS = [
+  { id: 'cat_1', category: 'False Ceiling & Drywall', particulars: 'Providing & fixing Gypsum board false ceiling with G.I. framing, perimeter channels & finishing with joint compound & paper tape complete', uom: 'sqft', rate: 125 },
+  { id: 'cat_2', category: 'False Ceiling & Drywall', particulars: 'Providing & fixing cove lighting profile detail in Gypsum false ceiling complete', uom: 'rft', rate: 140 },
+  { id: 'cat_3', category: 'False Ceiling & Drywall', particulars: 'Providing & fixing 600x600mm Armstrong / Mineral fibre acoustic modular grid false ceiling with silhouette grid', uom: 'sqft', rate: 110 },
+  { id: 'cat_4', category: 'False Ceiling & Drywall', particulars: 'Providing & erecting double skin 12.5mm Gypsum partition wall with 75mm G.I. studs and glasswool insulation', uom: 'sqft', rate: 185 },
+
+  { id: 'cat_5', category: 'Woodwork & Furniture', particulars: 'Providing & fixing modular wardrobe with 18mm BWR ply carcass, 1mm Merino/Greenlam laminate & soft-close Hettich/Hafele hardware', uom: 'sqft', rate: 1850 },
+  { id: 'cat_6', category: 'Woodwork & Furniture', particulars: 'Providing & fixing modular kitchen under-counter and overhead storage units in marine ply with acrylic/PU finish shutter & Blum hinges', uom: 'rft', rate: 2800 },
+  { id: 'cat_7', category: 'Woodwork & Furniture', particulars: 'Providing & fixing decorative natural wood veneer wall panelling on ply framework finished with Melamine / PU coat', uom: 'sqft', rate: 450 },
+  { id: 'cat_8', category: 'Woodwork & Furniture', particulars: 'Providing & fixing decorative charcoal / fluted PVC wall louvers panel with metal profile accents', uom: 'sqft', rate: 320 },
+  { id: 'cat_9', category: 'Woodwork & Furniture', particulars: 'Providing & fixing TV console unit with storage drawers, open niches & hidden LED backlit profile groove', uom: 'rft', rate: 2200 },
+  { id: 'cat_10', category: 'Woodwork & Furniture', particulars: 'Providing & fixing 32mm flush door shutter both sides laminated with hardwood lipping, lock, handles & door closer', uom: 'nos', rate: 8500 },
+
+  { id: 'cat_11', category: 'Painting & Polishing', particulars: 'Applying Asian Paints Royale Luxury Acrylic Emulsion on walls/ceilings including 2 coats Birla white putty & primer', uom: 'sqft', rate: 35 },
+  { id: 'cat_12', category: 'Painting & Polishing', particulars: 'Applying premium Tractor Emulsion paint on walls & ceilings including minor surface preparation', uom: 'sqft', rate: 22 },
+  { id: 'cat_13', category: 'Painting & Polishing', particulars: 'Melamine spray polishing on natural veneer or solid wood surfaces with stain and sanding sealer complete', uom: 'sqft', rate: 160 },
+  { id: 'cat_14', category: 'Painting & Polishing', particulars: 'PU (Polyurethane) high gloss or matte spray finish on woodwork/MDF panels', uom: 'sqft', rate: 240 },
+  { id: 'cat_15', category: 'Painting & Polishing', particulars: 'Supplying & fixing designer wallpaper with approved pattern including adhesive and surface preparation', uom: 'sqft', rate: 75 },
+
+  { id: 'cat_16', category: 'Flooring & Tiling', particulars: 'Laying 600x1200mm glazed vitrified tiles (GVT) on cement mortar bed with epoxy spacer grouting complete', uom: 'sqft', rate: 140 },
+  { id: 'cat_17', category: 'Flooring & Tiling', particulars: 'Supplying & installing 8mm AC4 grade wooden laminate flooring with 2mm foam underlay & skirting profiles', uom: 'sqft', rate: 125 },
+  { id: 'cat_18', category: 'Flooring & Tiling', particulars: 'Laying Italian marble flooring including diamond cut mirror polishing & crystallization finish', uom: 'sqft', rate: 380 },
+
+  { id: 'cat_19', category: 'Electrical & Services', particulars: 'Providing & fixing light point wiring in FRLS copper wire in concealed PVC conduits with modular switch & socket (Schneider/Legrand)', uom: 'nos', rate: 850 },
+  { id: 'cat_20', category: 'Electrical & Services', particulars: 'Providing & fixing 16A power plug point with independent wiring, modular plate, and MCB protection', uom: 'nos', rate: 1150 },
+  { id: 'cat_21', category: 'Electrical & Services', particulars: 'Supplying & laying heavy gauge VRV/Split AC copper refrigerant piping with 13mm nitrile rubber insulation and drain pipe', uom: 'rft', rate: 310 }
+];
+
+let catalogItems = [];
+let activeCatalogCategory = 'All';
+let activePickerTarget = null; // { sid, docType }
+let activeScanTargetDocType = null;
+let extractedScanData = null;
+let geminiApiKey = '';
+
+async function loadGeminiKey() {
+  try {
+    const res = await localDB.get('studio5_gemini_key');
+    geminiApiKey = res && res.value ? res.value : '';
+  } catch (e) { geminiApiKey = ''; }
+  const field = document.getElementById('gemini-api-key');
+  if (field) field.value = geminiApiKey;
+}
+
+async function saveGeminiKey() {
+  geminiApiKey = (document.getElementById('gemini-api-key')?.value || '').trim();
+  await localDB.set('studio5_gemini_key', geminiApiKey);
+  const statusEl = document.getElementById('gemini-key-status');
+  if (statusEl) statusEl.textContent = 'Key saved securely on this device.';
+}
+
+async function testGeminiKey() {
+  const key = (document.getElementById('gemini-api-key')?.value || '').trim();
+  const statusEl = document.getElementById('gemini-key-status');
+  if (!key) {
+    statusEl.textContent = '✗ Enter a key first.';
+    return;
+  }
+  statusEl.textContent = 'Testing key with Google Gemini API...';
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+    if (res.ok) {
+      statusEl.textContent = '✓ Valid Gemini API key!';
+    } else {
+      const err = await res.json().catch(() => ({}));
+      statusEl.textContent = '✗ Invalid key: ' + (err.error?.message || res.statusText);
+    }
+  } catch (e) {
+    statusEl.textContent = '✗ Could not test: ' + e.message;
+  }
+}
+
+async function loadCatalogItems() {
+  try {
+    const res = await localDB.get('studio5_catalog_items');
+    if (res && res.value) {
+      catalogItems = JSON.parse(res.value);
+    } else {
+      catalogItems = JSON.parse(JSON.stringify(DEFAULT_CATALOG_ITEMS));
+    }
+  } catch (e) {
+    catalogItems = JSON.parse(JSON.stringify(DEFAULT_CATALOG_ITEMS));
+  }
+  renderCatalogDatalist();
+  renderLibCatalog();
+}
+
+async function saveCatalogItems() {
+  await localDB.set('studio5_catalog_items', JSON.stringify(catalogItems));
+  renderCatalogDatalist();
+  renderLibCatalog();
+}
+
+async function resetCatalogToDefaults() {
+  if (confirm('Reset all catalog items back to standard Studio5 defaults? Custom additions will be replaced.')) {
+    catalogItems = JSON.parse(JSON.stringify(DEFAULT_CATALOG_ITEMS));
+    await saveCatalogItems();
+  }
+}
+
+function renderCatalogDatalist() {
+  const datalist = document.getElementById('catalog-datalist');
+  if (!datalist) return;
+  datalist.innerHTML = catalogItems.map(item => `<option value="${escapeHtml(item.particulars)}">${escapeHtml(item.category)} — ₹${item.rate}/${item.uom}</option>`).join('');
+}
+
+function handleParticularsInput(input) {
+  const val = (input.value || '').trim().toLowerCase();
+  if (!val) return;
+  const match = catalogItems.find(item => item.particulars.trim().toLowerCase() === val);
+  if (match) {
+    const tr = input.closest('tr');
+    if (!tr) return;
+    const uomEl = tr.querySelector('.f-uom');
+    const rateEl = tr.querySelector('.f-rate');
+    const qtyEl = tr.querySelector('.f-qty');
+    if (uomEl && !uomEl.value.trim()) uomEl.value = match.uom;
+    if (rateEl && (!rateEl.value || parseFloat(rateEl.value) === 0)) rateEl.value = match.rate;
+    if (qtyEl && (!qtyEl.value || parseFloat(qtyEl.value) === 0)) qtyEl.value = 1;
+    if (tr.closest('#po-sections')) recalcPO();
+    else if (tr.closest('#pi-sections')) recalcPI();
+    else if (tr.closest('#inv-sections')) recalcINV();
+  }
+}
+
+function getCatalogCategories() {
+  const cats = new Set();
+  catalogItems.forEach(it => cats.add(it.category || 'General'));
+  return ['All', ...Array.from(cats)];
+}
+
+function openCatalogPicker(sid, docType) {
+  activePickerTarget = { sid, docType };
+  document.getElementById('catalog-search-input').value = '';
+  activeCatalogCategory = 'All';
+  renderCatalogModalCategories();
+  renderCatalogModalItems();
+  document.getElementById('catalog-modal').classList.add('active');
+  setTimeout(() => document.getElementById('catalog-search-input')?.focus(), 100);
+}
+
+function closeCatalogModal() {
+  document.getElementById('catalog-modal').classList.remove('active');
+  activePickerTarget = null;
+}
+
+function renderCatalogModalCategories() {
+  const container = document.getElementById('catalog-category-pills');
+  if (!container) return;
+  const cats = getCatalogCategories();
+  container.innerHTML = cats.map(c => `
+    <span class="cat-pill ${c === activeCatalogCategory ? 'active' : ''}" onclick="selectCatalogCategory('${escapeHtml(c)}')">${escapeHtml(c)}</span>
+  `).join('');
+}
+
+function selectCatalogCategory(cat) {
+  activeCatalogCategory = cat;
+  renderCatalogModalCategories();
+  renderCatalogModalItems();
+}
+
+function filterCatalogModal() {
+  renderCatalogModalItems();
+}
+
+function renderCatalogModalItems() {
+  const container = document.getElementById('catalog-modal-items');
+  if (!container) return;
+  const q = (document.getElementById('catalog-search-input')?.value || '').toLowerCase().trim();
+  const filtered = catalogItems.filter(it => {
+    const matchesCat = activeCatalogCategory === 'All' || it.category === activeCatalogCategory;
+    const matchesQuery = !q || it.particulars.toLowerCase().includes(q) || (it.category && it.category.toLowerCase().includes(q));
+    return matchesCat && matchesQuery;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<p style="font-size:13px; color:var(--muted); text-align:center; padding:20px;">No matching items found.</p>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(it => `
+    <div class="catalog-item-card">
+      <div style="flex:1;">
+        <div style="font-size:13px; font-weight:600; color:#1e293b; line-height:1.4;">${escapeHtml(it.particulars)}</div>
+        <div style="display:flex; gap:8px; margin-top:4px; font-size:11.5px;">
+          <span style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:4px; font-weight:600;">${escapeHtml(it.category || 'General')}</span>
+          <span style="color:var(--muted);">Rate: <strong>₹${it.rate}</strong> / ${escapeHtml(it.uom)}</span>
+        </div>
+      </div>
+      <button type="button" class="btn small" style="background:#0284c7; padding:6px 14px; font-size:12px;" onclick="addCatalogItemToActiveSection('${it.id}', this)">+ Add</button>
+    </div>
+  `).join('');
+}
+
+function addCatalogItemToActiveSection(itemId, btn) {
+  if (!activePickerTarget) return;
+  const item = catalogItems.find(it => it.id === itemId);
+  if (!item) return;
+  const { sid, docType } = activePickerTarget;
+
+  if (docType === 'pi') {
+    addPIItemRow(sid, { particulars: item.particulars, uom: item.uom, rate: item.rate, qty: 1 });
+  } else if (docType === 'inv') {
+    addINVItemRow(sid, { particulars: item.particulars, uom: item.uom, rate: item.rate, qty: 1 });
+  } else if (docType === 'po') {
+    addPOItemRow(sid, { particulars: item.particulars, uom: item.uom, rate: item.rate, qty: 1, hsn: '9403' });
+  }
+
+  if (btn) {
+    const origText = btn.textContent;
+    btn.textContent = '✓ Added';
+    btn.style.background = '#16a34a';
+    setTimeout(() => {
+      btn.textContent = origText;
+      btn.style.background = '#0284c7';
+    }, 900);
+  }
+}
+
+function renderLibCatalog() {
+  const filterContainer = document.getElementById('lib-catalog-filters');
+  const listContainer = document.getElementById('lib-catalog-list');
+  if (!listContainer) return;
+  const cats = getCatalogCategories();
+  if (filterContainer) {
+    filterContainer.innerHTML = cats.map(c => `
+      <span class="cat-pill ${c === activeCatalogCategory ? 'active' : ''}" onclick="activeCatalogCategory='${escapeHtml(c)}'; renderLibCatalog();">${escapeHtml(c)}</span>
+    `).join('');
+  }
+  const filtered = catalogItems.filter(it => activeCatalogCategory === 'All' || it.category === activeCatalogCategory);
+  listContainer.innerHTML = filtered.map(it => `
+    <div class="catalog-item-card">
+      <div style="flex:1;">
+        <div style="font-size:13px; font-weight:600;">${escapeHtml(it.particulars)}</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+          <span style="font-weight:600; color:var(--accent);">${escapeHtml(it.category)}</span> &nbsp;·&nbsp; ₹${it.rate} / ${escapeHtml(it.uom)}
+        </div>
+      </div>
+      <button class="btn secondary small" style="color:#b0413e; border-color:#b0413e; padding:4px 8px; font-size:11px;" onclick="deleteCatalogItem('${it.id}')">✕</button>
+    </div>
+  `).join('');
+}
+
+function showAddCatalogItem() {
+  document.getElementById('add-catalog-form').style.display = 'block';
+}
+function hideAddCatalogItem() {
+  document.getElementById('add-catalog-form').style.display = 'none';
+}
+
+async function saveNewCatalogItem() {
+  const category = document.getElementById('new-cat-category').value;
+  const uom = (document.getElementById('new-cat-uom').value || 'sqft').trim();
+  const rate = parseFloat(document.getElementById('new-cat-rate').value) || 0;
+  const particulars = (document.getElementById('new-cat-particulars').value || '').trim();
+  if (!particulars) {
+    alert('Please enter the particulars description.');
+    return;
+  }
+  const newItem = {
+    id: 'cat_' + Date.now(),
+    category,
+    particulars,
+    uom,
+    rate
+  };
+  catalogItems.unshift(newItem);
+  await saveCatalogItems();
+  document.getElementById('new-cat-particulars').value = '';
+  document.getElementById('new-cat-rate').value = '';
+  hideAddCatalogItem();
+}
+
+async function deleteCatalogItem(id) {
+  if (confirm('Delete this item from the catalog?')) {
+    catalogItems = catalogItems.filter(it => it.id !== id);
+    await saveCatalogItems();
+  }
+}
+
+// --- SCAN SITE SHEET FUNCTIONS ---
+function openScanModal(docType) {
+  activeScanTargetDocType = docType;
+  resetScanModal();
+  document.getElementById('scan-modal').classList.add('active');
+}
+
+function closeScanModal() {
+  document.getElementById('scan-modal').classList.remove('active');
+  activeScanTargetDocType = null;
+  extractedScanData = null;
+}
+
+function resetScanModal() {
+  document.getElementById('scan-step-upload').style.display = 'block';
+  document.getElementById('scan-step-loading').style.display = 'none';
+  document.getElementById('scan-step-preview').style.display = 'none';
+  document.getElementById('scan-insert-btn').style.display = 'none';
+  document.getElementById('scan-camera-input').value = '';
+  document.getElementById('scan-file-input').value = '';
+  extractedScanData = null;
+}
+
+function downscaleImage(file, maxDimension, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDimension || h > maxDimension) {
+          if (w > h) {
+            h = Math.round((h * maxDimension) / w);
+            w = maxDimension;
+          } else {
+            w = Math.round((w * maxDimension) / h);
+            h = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality || 0.85);
+        resolve(dataUrl);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleScanFileInput(inputEl) {
+  const file = inputEl.files && inputEl.files[0];
+  if (!file) return;
+
+  document.getElementById('scan-step-upload').style.display = 'none';
+  document.getElementById('scan-step-loading').style.display = 'block';
+
+  try {
+    let base64Data = '';
+    let mimeType = 'image/jpeg';
+    if (file.type === 'application/pdf') {
+      mimeType = 'application/pdf';
+      base64Data = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.target.result);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+    } else {
+      base64Data = await downscaleImage(file, 1800, 0.85);
+    }
+
+    const targetUrl = (backendUrl ? backendUrl : (window.location.protocol.startsWith('http') ? window.location.origin : '')) + '/extract-items';
+    const payload = {
+      image: base64Data,
+      mimeType: mimeType,
+      apiKey: geminiApiKey || undefined
+    };
+
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server responded with ${res.status}`);
+    }
+
+    const data = await res.json();
+    if (!data.sections || data.sections.length === 0) {
+      throw new Error('No items or sections detected in the photo.');
+    }
+
+    extractedScanData = data;
+    renderScanPreview(data);
+  } catch (e) {
+    alert('Scan Error: ' + e.message + '\n\nTip: You can set a free Gemini API key in the Library tab.');
+    resetScanModal();
+  }
+}
+
+function renderScanPreview(data) {
+  document.getElementById('scan-step-loading').style.display = 'none';
+  document.getElementById('scan-step-preview').style.display = 'block';
+  document.getElementById('scan-insert-btn').style.display = 'inline-block';
+
+  let totalItems = 0;
+  data.sections.forEach(s => totalItems += (s.items ? s.items.length : 0));
+  document.getElementById('scan-result-summary').textContent = `✓ Detected ${totalItems} item(s) across ${data.sections.length} section(s)`;
+
+  const container = document.getElementById('scan-extracted-container');
+  container.innerHTML = data.sections.map((sec, sIdx) => `
+    <div style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; background:#f8fafc;">
+      <div style="font-weight:700; color:var(--accent); font-size:14px; margin-bottom:8px;">
+        📍 Section: ${escapeHtml(sec.section_name || 'Main Works')}
+      </div>
+      <table style="font-size:12px; background:#fff;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th>Particulars</th>
+            <th>Qty</th>
+            <th>UOM</th>
+            <th>Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(sec.items || []).map(it => `
+            <tr>
+              <td>${escapeHtml(it.particulars || '')}</td>
+              <td style="font-weight:600;">${it.qty ?? 1}</td>
+              <td>${escapeHtml(it.uom || 'sqft')}</td>
+              <td>${it.rate ? '₹' + it.rate : '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `).join('');
+}
+
+function insertScannedData() {
+  if (!extractedScanData || !extractedScanData.sections) return;
+  const docType = activeScanTargetDocType || 'pi';
+
+  extractedScanData.sections.forEach(sec => {
+    const secName = sec.section_name || '';
+    const items = (sec.items || []).map(it => ({
+      particulars: it.particulars,
+      qty: it.qty ?? 1,
+      uom: it.uom || 'sqft',
+      rate: it.rate ?? '',
+      rooms: it.rooms ?? ''
+    }));
+
+    if (docType === 'pi') {
+      addPISection(secName, false, items);
+    } else if (docType === 'inv') {
+      addINVSection(secName, false, items);
+    } else if (docType === 'po') {
+      addPOSection(secName, items);
+    }
+  });
+
+  closeScanModal();
+}
+
 loadBackendUrl();
+loadGeminiKey();
+loadCatalogItems();
 loadLibrary();
 loadBuyers();
 loadSites();
@@ -1984,5 +2553,71 @@ addINVSection();
 document.getElementById('challan-date').valueAsDate = new Date();
 addChallanItemRow();
 </script>
+
+<!-- CATALOG PICKER MODAL -->
+<div class="modal-overlay" id="catalog-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>⚡ Quick Pick from Interior Catalog</h3>
+      <button class="modal-close" onclick="closeCatalogModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:12px;">
+        <input id="catalog-search-input" placeholder="🔍 Search items (e.g. wardrobe, ceiling, paint, door)..." oninput="filterCatalogModal()">
+      </div>
+      <div id="catalog-category-pills" style="margin-bottom:14px;"></div>
+      <div id="catalog-modal-items" style="max-height:380px; overflow-y:auto;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn secondary small" onclick="closeCatalogModal()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCAN SITE SHEET MODAL -->
+<div class="modal-overlay" id="scan-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>📷 Scan Site Sheet / Measurement Notes</h3>
+      <button class="modal-close" onclick="closeScanModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="scan-step-upload">
+        <p style="font-size:13px; color:var(--muted); margin-top:0;">Take a photo of handwritten site notes, diary measurements, or vendor quotes. Gemini Vision AI will automatically detect rooms/sections, specifications, quantities, and rates.</p>
+        <div class="scan-dropzone" onclick="document.getElementById('scan-camera-input').click()">
+          <div style="font-size:32px; margin-bottom:6px;">📸</div>
+          <div style="font-weight:700; color:var(--accent); font-size:14px; margin-bottom:4px;">Take Photo with Phone Camera</div>
+          <div style="font-size:12px; color:var(--muted);">Or tap to capture handwritten site diary</div>
+        </div>
+        <div style="text-align:center; margin:10px 0; color:var(--muted); font-size:12px;">— OR —</div>
+        <div style="text-align:center;">
+          <button type="button" class="btn secondary small" onclick="document.getElementById('scan-file-input').click()">📁 Choose Image / File from Device</button>
+        </div>
+        <input type="file" id="scan-camera-input" accept="image/*" capture="environment" style="display:none;" onchange="handleScanFileInput(this)">
+        <input type="file" id="scan-file-input" accept="image/*,application/pdf" style="display:none;" onchange="handleScanFileInput(this)">
+      </div>
+
+      <div id="scan-step-loading" style="display:none; text-align:center; padding:30px 20px;">
+        <div style="font-size:36px; animation: pulse 1.5s infinite;">🤖</div>
+        <h4 style="margin:12px 0 6px; color:var(--accent);">Gemini AI is reading site notes...</h4>
+        <p style="font-size:13px; color:var(--muted); margin:0;">Detecting rooms, particulars, quantities, and rates from handwriting</p>
+      </div>
+
+      <div id="scan-step-preview" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div style="font-size:13px; font-weight:700; color:var(--good);" id="scan-result-summary">✓ Extracted items successfully</div>
+          <button type="button" class="btn secondary small" onclick="resetScanModal()" style="font-size:11px;">📷 Scan another photo</button>
+        </div>
+        <div id="scan-extracted-container" style="max-height:360px; overflow-y:auto;"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn secondary small" onclick="closeScanModal()">Cancel</button>
+      <button class="btn small" id="scan-insert-btn" style="display:none;" onclick="insertScannedData()">✓ Insert into Document</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="catalog-datalist"></datalist>
 </body>
 </html>
