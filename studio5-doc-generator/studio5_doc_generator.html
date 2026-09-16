@@ -2145,7 +2145,9 @@ async function testGeminiKey() {
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
     if (res.ok) {
-      statusEl.textContent = '✓ Valid Gemini API key!';
+      const data = await res.json();
+      const models = (data.models || []).map(m => m.name.replace(/^models\//, '')).filter(m => m.includes('flash'));
+      statusEl.textContent = '✓ Connected! Active models: ' + (models.slice(0, 3).join(', ') || 'OK');
     } else {
       const err = await res.json().catch(() => ({}));
       statusEl.textContent = '✗ Invalid key: ' + (err.error?.message || res.statusText);

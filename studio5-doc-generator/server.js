@@ -48,6 +48,22 @@ Rules:
   ]
 }`;
 
+async function getAvailableGeminiModels(apiKey) {
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (res.ok) {
+      const data = await res.json();
+      const available = (data.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
+        .map(m => m.name.replace(/^models\//, ''));
+      return available;
+    }
+  } catch (e) {
+    console.warn("Could not query ListModels:", e.message);
+  }
+  return [];
+}
+
 app.post("/extract-items", async (req, res) => {
   try {
     const { image, mimeType } = req.body;
@@ -82,15 +98,49 @@ app.post("/extract-items", async (req, res) => {
       return response;
     };
 
-    let response = await callGemini("gemini-2.5-flash");
-    if (!response.ok) {
-      console.warn("Gemini 2.5-flash failed, trying gemini-1.5-flash...");
-      response = await callGemini("gemini-1.5-flash");
+    const available = await getAvailableGeminiModels(apiKey);
+    const preferred = [
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-exp",
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-1.5-flash-latest",
+      "gemini-1.5-flash-002",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro",
+      "gemini-pro"
+    ];
+
+    let candidateModels = [];
+    if (available.length > 0) {
+      for (const p of preferred) {
+        if (available.includes(p)) candidateModels.push(p);
+      }
+      for (const m of available) {
+        if (!candidateModels.includes(m) && m.includes("flash")) candidateModels.push(m);
+      }
+      if (candidateModels.length === 0) candidateModels = available;
+    } else {
+      candidateModels = preferred;
     }
 
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(response.status || 500).json({ error: `Gemini API error: ${errText}` });
+    let response = null;
+    let lastError = "";
+
+    for (const model of candidateModels) {
+      console.log(`[extract-items] Attempting Gemini model: ${model}`);
+      response = await callGemini(model);
+      if (response.ok) {
+        break;
+      }
+      lastError = await response.text();
+      console.warn(`[extract-items] Model ${model} returned error ${response.status}: ${lastError}`);
+    }
+
+    if (!response || !response.ok) {
+      return res.status(response ? response.status : 500).json({
+        error: `Gemini API error: ${lastError || "All candidate models failed"}`
+      });
     }
 
     const data = await response.json();
