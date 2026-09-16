@@ -17,6 +17,9 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: "25mb" }));
 app.use(express.static(path.join(__dirname)));
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "studio5_doc_generator.html"));
+});
 
 function getExtractionPrompt(scopeMode) {
   const isRenovation = scopeMode !== "new_work";
