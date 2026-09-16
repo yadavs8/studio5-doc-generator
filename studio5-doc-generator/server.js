@@ -18,35 +18,90 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "25mb" }));
 app.use(express.static(path.join(__dirname)));
 
-const EXTRACTION_PROMPT = `You are an expert quantity surveyor and estimator for Studio5 Interiors (an interior design and architectural contracting company in India).
-The attached image is a handwritten site measurement sheet, diary note, BOQ list, or contractor quotation.
-Extract all line items, their quantities, units of measurement (UOM), and rates (if written).
+function getExtractionPrompt(scopeMode) {
+  const isRenovation = scopeMode !== "new_work";
+  return `You are an expert quantity surveyor and estimator for Studio5 Interiors (an interior architecture and contracting firm in India).
+The attached image or text is a handwritten site measurement sheet, diary note, BOQ list, or contractor quotation.
 
-Rules:
-1. Identify any section/room/area headers (e.g. "Drawing Room", "Master Bedroom", "Living Area", "Kitchen", "Toilet", "General"). If no room/section is mentioned, use "Main Works".
-2. For each item, extract:
-   - particulars: Clean, professional interior description (e.g. "Gypsum false ceiling with cove", "Modular wardrobe in laminate finish", "Flush door 32mm with teak frame").
-   - uom: Standard unit in lowercase: "sqft", "rft", "nos", "set", "lumpsum", "sqm", "mtr", "kg".
-   - qty: Numeric quantity (number only). If area calculation is written like "10x12", calculate the value (120) or extract the total number. If missing or unclear, use 1.
-   - rate: Unit price/rate if mentioned (number only, no commas or currency symbols). If not mentioned, return null.
-   - rooms: Number of rooms if specified, otherwise null.
-3. Respond ONLY in valid JSON matching this schema:
+CRITICAL CONTRACTING RULES & SCOPE IMPROVISATION:
+Site notes are written in brief shorthand (e.g. "Ceiling 400 sqft", "Flooring 650 sqft", "Master bed renovation", "2 mirrors 4x3").
+You must intelligently IMPROVISE and EXPAND raw shorthand into complete professional contracting line items according to real-world interior execution standards:
+
+${isRenovation ? `
+1. RENOVATION & MAJOR WORKS EXPANSION (Area-based in 'sqft' or running length in 'rft'):
+   When a note mentions "ceiling", "flooring", "partition", "tile work", or general renovation for an area/room, DO NOT just return a single supply item.
+   Break it down into the realistic contracting sequence:
+   a) DISMANTLING / DEMOLITION:
+      - For ceiling: "Dismantling of existing old false ceiling including framework and hardware safely without damaging structure" (UOM: sqft).
+      - For flooring: "Dismantling/hacking of existing floor tiles, skirting and cement mortar bed" (UOM: sqft).
+      - For walls/partitions: "Dismantling of existing wall panelling/partition/doors" (UOM: sqft or nos).
+   b) DEBRIS CLEARING & CARTING AWAY:
+      - "Collecting, lifting, cleaning and carting away all dismantled debris, malba and waste material from site to approved municipal dumping ground" (UOM: sqft or lumpsum).
+   c) SURFACE PREPARATION / BASE WORK:
+      - For flooring: "Surface preparation and cement mortar leveling screed bed complete" (UOM: sqft).
+   d) REBUILDING & NEW FABRICATION:
+      - For ceiling: "Providing & fixing new Gypsum board false ceiling with G.I. framing, perimeter channels, joint tape & compound finishing complete" (UOM: sqft).
+      - For flooring: "Laying new glazed vitrified tiles / wooden flooring complete with adhesive, spacer and epoxy grouting" (UOM: sqft).
+      - If cove is mentioned or standard: "Providing & fixing cove lighting profile detail in Gypsum false ceiling" (UOM: rft).
+` : `
+1. NEW WORK ONLY:
+   Generate direct supply and installation line items with complete technical specifications (without demolition/dismantling steps).
+`}
+
+2. DISCRETE GOODS & FIXTURES (strictly in 'nos'):
+   Items like mirrors, LED mirrors, vanity units, flush doors, door locks/handles, electrical fixtures, sanitary ware, loose furniture items MUST ALWAYS have UOM as "nos" (numbers) or "set", NEVER sqft or rft.
+   - Example: "Supplying & installing 5mm bevelled edge designer mirror / LED backlit mirror with mounting bracket complete" -> UOM: "nos".
+   - Example: "Providing & fixing 32mm flush door shutter with laminate finish, teak lipping, hinges & mortise lock" -> UOM: "nos".
+
+3. ACCURATE UNITS (UOM) ENFORCEMENT:
+   - Areas (ceilings, flooring, wall panelling, painting, plastering, dismantling) -> "sqft"
+   - Running lengths (cove profiles, skirting, pelmet, kitchen counter length, AC copper piping) -> "rft"
+   - Discrete fixtures (mirrors, lights, switches, doors, vanity, chairs, basins) -> "nos"
+   - General cleaning / bulk debris dumping -> "lumpsum" or "sqft"
+
+4. QUANTITIES & CALCULATIONS:
+   - If dimensions are given (e.g. 10x12 or 15*20), compute the area (120, 300) for sqft items.
+   - When a ceiling/floor area is given (e.g. 400 sqft), apply the SAME 400 sqft to the Dismantling, Debris, and Rebuilding steps.
+   - Rates: Extract rates if written. If missing, leave rate as null.
+
+5. SECTION & ROOM ORGANIZATION:
+   Group items into logical sections by room/area (e.g. "Drawing Room", "Master Bedroom", "Kitchen", "Common Area"). If no room is mentioned, use "Main Fit-Out Works".
+
+Respond ONLY in valid JSON matching this schema:
 {
   "sections": [
     {
-      "section_name": "Living Room",
+      "section_name": "Master Bedroom",
       "items": [
         {
-          "particulars": "Gypsum false ceiling with cove",
+          "particulars": "Dismantling of existing old false ceiling including framework safely",
           "uom": "sqft",
           "qty": 350,
-          "rate": 125,
-          "rooms": null
+          "rate": 18
+        },
+        {
+          "particulars": "Collecting and carting away ceiling debris / malba from site",
+          "uom": "sqft",
+          "qty": 350,
+          "rate": 8
+        },
+        {
+          "particulars": "Providing & fixing Gypsum board false ceiling with G.I. channels complete",
+          "uom": "sqft",
+          "qty": 350,
+          "rate": 125
+        },
+        {
+          "particulars": "Supplying & installing 5mm bevelled edge LED backlit mirror complete",
+          "uom": "nos",
+          "qty": 2,
+          "rate": 3500
         }
       ]
     }
   ]
 }`;
+}
 
 async function getAvailableGeminiModels(apiKey) {
   try {
@@ -66,7 +121,7 @@ async function getAvailableGeminiModels(apiKey) {
 
 app.post("/extract-items", async (req, res) => {
   try {
-    const { image, mimeType } = req.body;
+    const { image, mimeType, scopeMode } = req.body;
     const apiKey = req.body.apiKey || req.headers["x-gemini-key"] || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res.status(400).json({
@@ -78,6 +133,7 @@ app.post("/extract-items", async (req, res) => {
     }
     const cleanBase64 = String(image).replace(/^data:image\/[a-z]+;base64,/, "").replace(/^data:application\/pdf;base64,/, "");
     const actualMime = mimeType || "image/jpeg";
+    const promptText = getExtractionPrompt(scopeMode || "renovation");
 
     const callGemini = async (modelName) => {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
@@ -88,7 +144,7 @@ app.post("/extract-items", async (req, res) => {
             {
               parts: [
                 { inlineData: { mimeType: actualMime, data: cleanBase64 } },
-                { text: EXTRACTION_PROMPT }
+                { text: promptText }
               ]
             }
           ],
