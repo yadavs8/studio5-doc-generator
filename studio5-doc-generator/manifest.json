@@ -1,0 +1,16 @@
+﻿{
+  "name": "Studio5 Document Generator",
+  "short_name": "Studio5 Docs",
+  "description": "Studio5 Interiors instant document generator",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5f2",
+  "theme_color": "#8a5a2c",
+  "icons": [
+    {
+      "src": "/assets/logo.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png"
+    }
+  ]
+}

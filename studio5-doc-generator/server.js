@@ -16,6 +16,11 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: "5mb" }));
+app.use(express.static(path.join(__dirname)));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "studio5_doc_generator.html"));
+});
 
 const logoBuffer = fs.readFileSync(path.join(__dirname, "assets", "logo.png"));
 const stampBuffer = fs.existsSync(path.join(__dirname, "assets", "stamp.png"))
