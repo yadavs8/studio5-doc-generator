@@ -6,6 +6,7 @@ const generatePO = require("./generators/generate_po.js");
 const generatePI = require("./generators/generate_pi.js");
 const generateInvoice = require("./generators/generate_invoice.js");
 const generateChallan = require("./generators/generate_challan.js");
+const documentNumbering = require("./lib/documentNumbering.js");
 
 const app = express();
 app.use((req, res, next) => {
@@ -224,49 +225,146 @@ const stampBuffer = fs.existsSync(path.join(__dirname, "assets", "stamp.png"))
   ? fs.readFileSync(path.join(__dirname, "assets", "stamp.png"))
   : null;
 
-function sendDocx(res, buffer, filename) {
+function sendDocx(res, buffer, filename, docNumber) {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  // Document numbers contain "/" (e.g. "PO/1", "S51/26-27/001") which is
+  // fine in a header VALUE but not safe inside the filename itself.
+  if (docNumber) res.setHeader("X-Document-Number", docNumber);
   res.send(buffer);
 }
 
-app.post("/generate/purchase-order", async (req, res) => {
+function safeFilenamePart(docNumber) {
+  return String(docNumber).replace(/[\\/]/g, "-");
+}
+
+function handleLedgerError(res, e) {
+  if (e.code === "DUPLICATE_NUMBER") {
+    return res.status(409).json({ error: e.message });
+  }
+  console.error(e);
+  return res.status(500).json({ error: e.message });
+}
+
+// GET /next-number/:docType?address=<key> — read-only preview of what the
+// next number would be. Does not allocate/spend a number, so opening a tab
+// and never clicking Generate never creates a gap.
+app.get("/next-number/:docType", async (req, res) => {
   try {
-    const buf = await generatePO(req.body, logoBuffer, stampBuffer);
-    sendDocx(res, buf, "Purchase_Order.docx");
+    const number = await documentNumbering.previewNextNumber(req.params.docType, {
+      addressKey: req.query.address,
+    });
+    res.json({ number });
+  } catch (e) {
+    if (e.code === "INVALID_DOC_TYPE") return res.status(400).json({ error: e.message });
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /documents?type=<docType>&limit=<n> — recent generated-document
+// history, for the Library tab's "Recent Generated Documents" panel.
+app.get("/documents", async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+    const docs = await documentNumbering.listDocuments(req.query.type || null, limit);
+    res.json(docs);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /void-document { doc_type, doc_number, reason } — marks a rejected
+// document void without disturbing the sequence, so the reason for the gap
+// stays on record instead of being silently unexplained.
+app.post("/void-document", async (req, res) => {
+  try {
+    const { doc_type, doc_number, reason } = req.body;
+    if (!doc_type || !doc_number) {
+      return res.status(400).json({ error: "doc_type and doc_number are required" });
+    }
+    const updated = await documentNumbering.voidDocument(doc_type, doc_number, reason);
+    res.json(updated);
+  } catch (e) {
+    if (e.code === "NOT_FOUND" || e.code === "INVALID_DOC_TYPE") {
+      return res.status(400).json({ error: e.message });
+    }
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/generate/purchase-order", async (req, res) => {
+  try {
+    const payload = req.body;
+    const { docNumber } = await documentNumbering.allocateAndRecord("po", {
+      docNumber: payload.po_no,
+      issuingAddressKey: payload.issuing_address_key,
+      counterpartyName: payload.vendor && payload.vendor.name,
+      totalAmount: payload.grand_total,
+      payload,
+    });
+    payload.po_no = docNumber;
+    const buf = await generatePO(payload, logoBuffer, stampBuffer);
+    sendDocx(res, buf, `Purchase_Order_${safeFilenamePart(docNumber)}.docx`, docNumber);
+  } catch (e) {
+    handleLedgerError(res, e);
   }
 });
 
 app.post("/generate/proforma-invoice", async (req, res) => {
   try {
-    const buf = await generatePI(req.body, logoBuffer, stampBuffer);
-    sendDocx(res, buf, "Proforma_Invoice.docx");
+    const payload = req.body;
+    const { docNumber } = await documentNumbering.allocateAndRecord("pi", {
+      docNumber: payload.pi_no,
+      issuingAddressKey: payload.issuing_address_key,
+      counterpartyName: payload.buyer && payload.buyer.name,
+      totalAmount: payload.grand_total,
+      payload,
+    });
+    payload.pi_no = docNumber;
+    const buf = await generatePI(payload, logoBuffer, stampBuffer);
+    sendDocx(res, buf, `Proforma_Invoice_${safeFilenamePart(docNumber)}.docx`, docNumber);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
+    handleLedgerError(res, e);
   }
 });
 
 app.post("/generate/invoice", async (req, res) => {
   try {
-    const buf = await generateInvoice(req.body, logoBuffer, stampBuffer);
-    sendDocx(res, buf, "Invoice.docx");
+    const payload = req.body;
+    const { docNumber } = await documentNumbering.allocateAndRecord("invoice", {
+      docNumber: payload.invoice_no,
+      opts: { addressKey: payload.issuing_address_key },
+      issuingAddressKey: payload.issuing_address_key,
+      counterpartyName: payload.buyer && payload.buyer.name,
+      totalAmount: payload.grand_total,
+      payload,
+    });
+    payload.invoice_no = docNumber;
+    const buf = await generateInvoice(payload, logoBuffer, stampBuffer);
+    sendDocx(res, buf, `Invoice_${safeFilenamePart(docNumber)}.docx`, docNumber);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
+    handleLedgerError(res, e);
   }
 });
 
 app.post("/generate/challan", async (req, res) => {
   try {
-    const buf = await generateChallan(req.body, logoBuffer, stampBuffer);
-    sendDocx(res, buf, "Delivery_Challan.docx");
+    const payload = req.body;
+    const { docNumber } = await documentNumbering.allocateAndRecord("challan", {
+      docNumber: payload.challan_no,
+      issuingAddressKey: payload.issuing_address_key,
+      counterpartyName: payload.receiver_name,
+      totalAmount: null,
+      payload,
+    });
+    payload.challan_no = docNumber;
+    const buf = await generateChallan(payload, logoBuffer, stampBuffer);
+    sendDocx(res, buf, `Delivery_Challan_${safeFilenamePart(docNumber)}.docx`, docNumber);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
+    handleLedgerError(res, e);
   }
 });
 

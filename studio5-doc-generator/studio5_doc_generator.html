@@ -173,16 +173,28 @@
     </div>
 
     <div class="card">
-      <h2>📄 Proforma Invoice Numbering</h2>
-      <p style="font-size:13px; color:var(--muted); margin-top:0;">Auto-generates P.I. numbers as <strong>S5{n}/{FY}/{MM}/{DD}</strong> — e.g. S51/26-27/08/31, then S52/26-27/08/31 next time, and so on. The number only advances after a document is actually generated.</p>
+      <h2>📋 Recent Generated Documents</h2>
+      <p style="font-size:13px; color:var(--muted); margin-top:0;">Every PO, Proforma Invoice, Tax Invoice and Delivery Challan number is now allocated and recorded on the server automatically — there's no counter to maintain here. If a document is rejected, mark it Void below with a reason; the next number issued continues cleanly and the reason stays on record instead of leaving an unexplained gap.</p>
       <div class="row2">
-        <div><label>Next sequence number (n)</label><input id="pi-seq-next" type="number" min="1"></div>
-        <div><label>Preview</label><input id="pi-seq-preview" readonly style="background:#fafafa;"></div>
+        <div>
+          <label>Filter by type</label>
+          <select id="docs-filter" onchange="loadRecentDocuments()">
+            <option value="">All types</option>
+            <option value="po">Purchase Order</option>
+            <option value="pi">Proforma Invoice</option>
+            <option value="invoice">Tax Invoice</option>
+            <option value="challan">Delivery Challan</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button class="btn secondary small" onclick="loadRecentDocuments()">Refresh</button>
+        </div>
       </div>
-      <div class="lib-actions">
-        <button class="btn small" onclick="savePISequence()">Save</button>
-      </div>
-      <span class="status" id="pi-seq-status"></span>
+      <table style="margin-top:10px;">
+        <thead><tr><th>Number</th><th>Type</th><th>Date</th><th>Party</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+        <tbody id="docs-table-body"></tbody>
+      </table>
+      <span class="status" id="docs-status"></span>
     </div>
 
     <div class="card">
@@ -315,9 +327,9 @@
   <div class="panel" id="panel-generate">
     <div class="card">
       <h2>1. Issuing Address</h2>
-      <select id="gen-address"></select>
+      <select id="gen-address" onchange="autofillNumber('gen-pono','po',this.value)"></select>
       <div class="row2">
-        <div><label>PO No.</label><input id="gen-pono" placeholder="PO/0803"></div>
+        <div><label>PO No.</label><input id="gen-pono" placeholder="PO/0803" oninput="this.dataset.autofilled=''"></div>
         <div><label>PO Date</label><input id="gen-podate" type="date"></div>
       </div>
     </div>
@@ -381,9 +393,9 @@
   <div class="panel" id="panel-generate-pi">
     <div class="card">
       <h2>1. Issuing Address</h2>
-      <select id="pi-address"></select>
+      <select id="pi-address" onchange="autofillNumber('pi-no','pi',this.value)"></select>
       <div class="row2">
-        <div><label>P.I. No.</label><input id="pi-no" placeholder="26-27/0605"></div>
+        <div><label>P.I. No.</label><input id="pi-no" placeholder="26-27/1101" oninput="this.dataset.autofilled=''"></div>
         <div><label>P.I. Date</label><input id="pi-date" type="date"></div>
       </div>
       <label>Bank Account to show</label>
@@ -455,9 +467,9 @@
   <div class="panel" id="panel-generate-inv">
     <div class="card">
       <h2>1. Issuing Address</h2>
-      <select id="inv-address"></select>
+      <select id="inv-address" onchange="autofillNumber('inv-no','invoice',this.value)"></select>
       <div class="row2">
-        <div><label>Invoice No.</label><input id="inv-no" placeholder="26-27/0605"></div>
+        <div><label>Invoice No.</label><input id="inv-no" placeholder="S51/26-27/001" oninput="this.dataset.autofilled=''"></div>
         <div><label>Invoice Date</label><input id="inv-date" type="date"></div>
       </div>
       <label>Bank Account to show</label>
@@ -529,9 +541,9 @@
   <div class="panel" id="panel-generate-challan">
     <div class="card">
       <h2>1. Issuing Address</h2>
-      <select id="challan-address"></select>
+      <select id="challan-address" onchange="autofillNumber('challan-no','challan',this.value)"></select>
       <div class="row2">
-        <div><label>Challan No.</label><input id="challan-no" placeholder="45"></div>
+        <div><label>Challan No.</label><input id="challan-no" placeholder="DC/45" oninput="this.dataset.autofilled=''"></div>
         <div><label>Date</label><input id="challan-date" type="date"></div>
       </div>
       <label>Vehicle No. (optional)</label>
@@ -699,59 +711,11 @@ const DEFAULT_SITES = {
   }
 };
 
-let piSequence = 1;
-
-function getFinancialYear(date) {
-  const y = date.getFullYear();
-  const m = date.getMonth() + 1; // 1-12
-  const startYear = m >= 4 ? y : y - 1;
-  const endYearShort = String((startYear + 1) % 100).padStart(2, '0');
-  const startYearShort = String(startYear % 100).padStart(2, '0');
-  return `${startYearShort}-${endYearShort}`;
-}
-
-function formatPINo(seq, date) {
-  const fy = getFinancialYear(date);
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `S5${seq}/${fy}/${mm}/${dd}`;
-}
-
-async function loadPISequence() {
-  try {
-    const res = await localDB.get('studio5_pi_sequence');
-    piSequence = res && res.value ? parseInt(res.value, 10) : 1;
-  } catch (e) { piSequence = 1; }
-  document.getElementById('pi-seq-next').value = piSequence;
-  updatePISeqPreview();
-}
-
-function updatePISeqPreview() {
-  const seq = parseInt(document.getElementById('pi-seq-next').value, 10) || 1;
-  document.getElementById('pi-seq-preview').value = formatPINo(seq, new Date());
-}
-
-async function savePISequence() {
-  piSequence = parseInt(document.getElementById('pi-seq-next').value, 10) || 1;
-  await localDB.set('studio5_pi_sequence', String(piSequence));
-  document.getElementById('pi-seq-status').textContent = 'Saved.';
-  updatePISeqPreview();
-  autofillPINo();
-}
-
-async function incrementPISequence() {
-  piSequence++;
-  await localDB.set('studio5_pi_sequence', String(piSequence));
-}
-
-function autofillPINo() {
-  const field = document.getElementById('pi-no');
-  if (field && !field.value.trim()) {
-    field.value = formatPINo(piSequence, new Date());
-  }
-}
-
-document.getElementById('pi-seq-next')?.addEventListener('input', updatePISeqPreview);
+// Document numbering (PO/PI/Invoice/Challan) is now allocated and recorded
+// server-side — see autofillNumber()/fetchNextNumberPreview() and the
+// "Recent Generated Documents" panel below. No client-side counter here
+// anymore: it used to live only in this browser's localStorage, which is
+// exactly why numbers went out of sync across devices/rejections.
 
 // Simple persistent storage using localStorage — works when this file is opened
 // directly in any browser (not dependent on Claude's chat environment).
@@ -800,6 +764,7 @@ async function saveBackendUrl() {
   backendUrl = cleanBackendUrl();
   await localDB.set('studio5_backend_url', backendUrl);
   document.getElementById('backend-status').textContent = 'Saved: ' + backendUrl;
+  loadRecentDocuments();
 }
 
 async function testBackendUrl() {
@@ -826,14 +791,14 @@ async function testBackendUrl() {
   }
 }
 
-async function generateViaBackend(endpoint, payload, filename, statusElId) {
+async function generateViaBackend(endpoint, payload, filenamePrefix, statusElId) {
   const statusEl = document.getElementById(statusElId);
   if (!backendUrl) {
     if (window.location.protocol.startsWith('http')) {
       backendUrl = window.location.origin;
     } else {
       statusEl.textContent = 'Set up the backend URL in the Library tab first.';
-      return false;
+      return { ok: false };
     }
   }
   statusEl.textContent = 'Generating...';
@@ -846,9 +811,11 @@ async function generateViaBackend(endpoint, payload, filename, statusElId) {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       statusEl.textContent = 'Error: ' + (err.error || res.statusText);
-      return false;
+      return { ok: false };
     }
+    const docNumber = res.headers.get('X-Document-Number') || null;
     const blob = await res.blob();
+    const filename = filenamePrefix + '_' + (docNumber || 'draft').replace(/[\\/]/g, '-') + '.docx';
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -857,11 +824,100 @@ async function generateViaBackend(endpoint, payload, filename, statusElId) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    statusEl.textContent = '✓ Downloaded ' + filename;
-    return true;
+    statusEl.textContent = '✓ Generated ' + (docNumber || filename) + ' — downloaded.';
+    return { ok: true, docNumber };
   } catch (e) {
     statusEl.textContent = 'Error: could not reach backend (' + e.message + ')';
-    return false;
+    return { ok: false };
+  }
+}
+
+async function fetchNextNumberPreview(docType, addressKey) {
+  if (!backendUrl) return null;
+  try {
+    const qs = addressKey ? ('?address=' + encodeURIComponent(addressKey)) : '';
+    const res = await fetch(backendUrl + '/next-number/' + docType + qs);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.number || null;
+  } catch (e) { return null; }
+}
+
+// Autofills a document-number field with the next expected number, but
+// only when the field is empty or still holds a previous autofilled value
+// (never overwrites something the user actually typed).
+async function autofillNumber(fieldId, docType, addressKey) {
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  if (field.value.trim() && field.dataset.autofilled !== '1') return;
+  const preview = await fetchNextNumberPreview(docType, addressKey);
+  if (preview) {
+    field.value = preview;
+    field.dataset.autofilled = '1';
+  }
+}
+
+const DOC_TYPE_LABELS = { po: 'Purchase Order', pi: 'Proforma Invoice', invoice: 'Tax Invoice', challan: 'Delivery Challan' };
+
+async function loadRecentDocuments() {
+  const statusEl = document.getElementById('docs-status');
+  const tbody = document.getElementById('docs-table-body');
+  if (!statusEl || !tbody) return;
+  if (!backendUrl) { statusEl.textContent = 'Set up the backend URL above first.'; tbody.innerHTML = ''; return; }
+  const type = document.getElementById('docs-filter').value;
+  statusEl.textContent = 'Loading...';
+  try {
+    const qs = type ? ('?type=' + type) : '';
+    const res = await fetch(backendUrl + '/documents' + qs);
+    if (!res.ok) { statusEl.textContent = 'Could not load documents.'; return; }
+    const docs = await res.json();
+    tbody.innerHTML = '';
+    if (docs.length === 0) { statusEl.textContent = 'No documents generated yet.'; return; }
+    statusEl.textContent = '';
+    docs.forEach(d => {
+      const tr = document.createElement('tr');
+      const amt = d.total_amount != null
+        ? Number(d.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : '—';
+      const date = d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN') : '—';
+      const statusBadge = d.status === 'void'
+        ? '<span style="color:#b0413e; font-weight:600;">Void' + (d.void_reason ? ' — ' + escapeHtml(d.void_reason) : '') + '</span>'
+        : '<span style="color:#1a7f37; font-weight:600;">Issued</span>';
+      const voidBtn = d.status === 'issued'
+        ? `<button class="btn secondary small" onclick="voidDocumentPrompt('${d.doc_type}', '${escapeHtml(d.doc_number)}')">Mark void</button>`
+        : '';
+      tr.innerHTML =
+        '<td style="font-family:monospace;">' + escapeHtml(d.doc_number) + '</td>' +
+        '<td>' + (DOC_TYPE_LABELS[d.doc_type] || d.doc_type) + '</td>' +
+        '<td>' + date + '</td>' +
+        '<td>' + escapeHtml(d.counterparty_name || '—') + '</td>' +
+        '<td style="text-align:right;">' + amt + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + voidBtn + '</td>';
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    statusEl.textContent = 'Error: could not reach backend (' + e.message + ')';
+  }
+}
+
+async function voidDocumentPrompt(docType, docNumber) {
+  const reason = prompt('Why is "' + docNumber + '" being voided? (e.g. rejected by client)');
+  if (reason === null) return;
+  try {
+    const res = await fetch(backendUrl + '/void-document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doc_type: docType, doc_number: docNumber, reason })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert('Could not void: ' + (err.error || res.statusText));
+      return;
+    }
+    loadRecentDocuments();
+  } catch (e) {
+    alert('Error: could not reach backend (' + e.message + ')');
   }
 }
 
@@ -1525,7 +1581,7 @@ function recalcPO() {
   if (wordsEl) wordsEl.textContent = 'Amount in words: ' + numberToWordsIndian(grand) + ' Rupees';
 }
 
-function generatePO() {
+async function generatePO() {
   const addrKey = document.getElementById('gen-address').value;
   const addr = addresses[addrKey];
   const sections = [];
@@ -1560,6 +1616,7 @@ function generatePO() {
     po_no: document.getElementById('gen-pono').value,
     po_date: document.getElementById('gen-podate').value,
     issuing_address: addr,
+    issuing_address_key: addrKey,
     vendor: {
       name: document.getElementById('gen-vendor-name').value,
       address: document.getElementById('gen-vendor-address').value,
@@ -1576,7 +1633,11 @@ function generatePO() {
     grand_total: parseFloat(document.getElementById('grand-total').textContent.replace(/[^0-9.]/g,'')),
     amount_in_words: document.getElementById('words-preview').textContent.replace('Amount in words: ', '')
   };
-  generateViaBackend('/generate/purchase-order', payload, 'Purchase_Order_' + (payload.po_no || 'draft') + '.docx', 'gen-status');
+  const result = await generateViaBackend('/generate/purchase-order', payload, 'Purchase_Order', 'gen-status');
+  if (result.ok) {
+    document.getElementById('gen-pono').value = '';
+    autofillNumber('gen-pono', 'po', addrKey);
+  }
 }
 
 function copyOutput() {
@@ -1759,6 +1820,7 @@ async function generatePI() {
     pi_no: document.getElementById('pi-no').value,
     pi_date: document.getElementById('pi-date').value,
     issuing_address: addr,
+    issuing_address_key: addrKey,
     buyer: {
       name: document.getElementById('pi-buyer-name').value,
       address: document.getElementById('pi-buyer-address').value,
@@ -1775,11 +1837,10 @@ async function generatePI() {
     bank: banks[bankKey],
     payment_terms: document.getElementById('pi-payment-terms').value
   };
-  const success = await generateViaBackend('/generate/proforma-invoice', payload, 'Proforma_Invoice_' + (payload.pi_no || 'draft') + '.docx', 'pi-gen-status');
-  if (success) {
-    await incrementPISequence();
+  const result = await generateViaBackend('/generate/proforma-invoice', payload, 'Proforma_Invoice', 'pi-gen-status');
+  if (result.ok) {
     document.getElementById('pi-no').value = '';
-    autofillPINo();
+    autofillNumber('pi-no', 'pi', addrKey);
   }
 }
 
@@ -1915,7 +1976,7 @@ function recalcINV() {
   document.getElementById('inv-words-preview').textContent = 'Amount in words: ' + numberToWordsIndian(grand) + ' Rupees';
 }
 
-function generateINV() {
+async function generateINV() {
   const addrKey = document.getElementById('inv-address').value;
   const addr = addresses[addrKey];
   const sections = [];
@@ -1951,6 +2012,7 @@ function generateINV() {
     invoice_no: document.getElementById('inv-no').value,
     invoice_date: document.getElementById('inv-date').value,
     issuing_address: addr,
+    issuing_address_key: addrKey,
     buyer: {
       name: document.getElementById('inv-buyer-name').value,
       address: document.getElementById('inv-buyer-address').value,
@@ -1967,7 +2029,11 @@ function generateINV() {
     bank: banks[bankKey],
     payment_terms: document.getElementById('inv-payment-terms').value
   };
-  generateViaBackend('/generate/invoice', payload, 'Invoice_' + (payload.invoice_no || 'draft') + '.docx', 'inv-gen-status');
+  const result = await generateViaBackend('/generate/invoice', payload, 'Invoice', 'inv-gen-status');
+  if (result.ok) {
+    document.getElementById('inv-no').value = '';
+    autofillNumber('inv-no', 'invoice', addrKey);
+  }
 }
 
 function copyINVOutput() {
@@ -2020,7 +2086,7 @@ function recalcChallan() {
   document.getElementById('challan-total-qty').textContent = total;
 }
 
-function generateChallan() {
+async function generateChallan() {
   const addrKey = document.getElementById('challan-address').value;
   const addr = addresses[addrKey];
   const items = [];
@@ -2046,6 +2112,7 @@ function generateChallan() {
     challan_date: document.getElementById('challan-date').value,
     vehicle_no: document.getElementById('challan-vehicle').value,
     issuing_address: addr,
+    issuing_address_key: addrKey,
     receiver_name: document.getElementById('challan-receiver-name').value,
     site_address: document.getElementById('challan-site-address').value,
     subject: document.getElementById('challan-subject').value,
@@ -2054,7 +2121,11 @@ function generateChallan() {
     total_qty: document.getElementById('challan-total-qty').textContent,
     unit_label: document.getElementById('challan-unit-label').value
   };
-  generateViaBackend('/generate/challan', payload, 'Delivery_Challan_' + (payload.challan_no || 'draft') + '.docx', 'challan-gen-status');
+  const result = await generateViaBackend('/generate/challan', payload, 'Delivery_Challan', 'challan-gen-status');
+  if (result.ok) {
+    document.getElementById('challan-no').value = '';
+    autofillNumber('challan-no', 'challan', addrKey);
+  }
 }
 
 function copyChallanOutput() {
@@ -2080,7 +2151,11 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
-    if (tab.dataset.tab === 'generate-pi') autofillPINo();
+    if (tab.dataset.tab === 'generate') autofillNumber('gen-pono', 'po', document.getElementById('gen-address').value);
+    if (tab.dataset.tab === 'generate-pi') autofillNumber('pi-no', 'pi', document.getElementById('pi-address').value);
+    if (tab.dataset.tab === 'generate-inv') autofillNumber('inv-no', 'invoice', document.getElementById('inv-address').value);
+    if (tab.dataset.tab === 'generate-challan') autofillNumber('challan-no', 'challan', document.getElementById('challan-address').value);
+    if (tab.dataset.tab === 'library') loadRecentDocuments();
     updateSectionCopyDropdowns();
   });
 });
@@ -2704,13 +2779,19 @@ function insertScannedData() {
   closeScanModal();
 }
 
-loadBackendUrl();
+loadBackendUrl().then(() => {
+  loadRecentDocuments();
+  loadLibrary().then(() => {
+    autofillNumber('gen-pono', 'po', document.getElementById('gen-address').value);
+    autofillNumber('pi-no', 'pi', document.getElementById('pi-address').value);
+    autofillNumber('inv-no', 'invoice', document.getElementById('inv-address').value);
+    autofillNumber('challan-no', 'challan', document.getElementById('challan-address').value);
+  });
+});
 loadGeminiKey();
 loadCatalogItems();
-loadLibrary();
 loadBuyers();
 loadSites();
-loadPISequence().then(() => autofillPINo());
 addPOSection();
 document.getElementById('gen-podate').valueAsDate = new Date();
 document.getElementById('pi-date').valueAsDate = new Date();
