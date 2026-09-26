@@ -344,10 +344,10 @@
       <h2>Proforma Invoice / Invoice — Nested BOQ Item Format</h2>
       <p style="font-size:13px; color:var(--muted); margin-top:0;">Use this when one work description covers several priced components (e.g. a room-furniture package). Confirmed final format:</p>
       <table>
-        <tr><th>Sr. No.</th><th>Particulars</th><th>UOM</th><th>Qty/Area</th><th>Rate</th><th>No. of Rooms</th><th>Amount</th></tr>
+        <tr><th>Sr. No.</th><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th><th>Amount</th></tr>
         <tr><td>1</td><td colspan="6"><strong>Providing and fixing [description] — spans full width, bold</strong></td></tr>
-        <tr><td>a</td><td>Component 1</td><td>nos</td><td>1</td><td>7,259.00</td><td>161</td><td>11,68,699.00</td></tr>
-        <tr><td>b</td><td>Component 2</td><td>nos</td><td>1</td><td>1,850.00</td><td>161</td><td>2,97,850.00</td></tr>
+        <tr><td>a</td><td>Component 1</td><td>1</td><td>nos</td><td>7,259.00</td><td>161</td><td>11,68,699.00</td></tr>
+        <tr><td>b</td><td>Component 2</td><td>1</td><td>nos</td><td>1,850.00</td><td>161</td><td>2,97,850.00</td></tr>
         <tr><td colspan="4"></td><td colspan="2" style="text-align:right;"><strong>Total Rate per Room</strong></td><td>9,109.00</td></tr>
         <tr><td colspan="6" style="text-align:right;"><strong>Sub-Total</strong></td><td><strong>14,66,549.00</strong></td></tr>
       </table>
@@ -358,8 +358,8 @@
       <h2>Purchase Order — Saved Template Structure</h2>
       <p style="font-size:13px; color:var(--muted); margin-top:0;">This is the exact column layout and static content pulled from your uploaded template. It's locked into the library and reused every time a PO is generated.</p>
       <table>
-        <tr><th>Sr. No.</th><th>Particulars</th><th>HSN/SAC</th><th>UOM</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>
-        <tr><td>1</td><td>e.g. Providing &amp; Fixing Study Table</td><td>9403</td><td>nos</td><td>8</td><td>11450.32</td><td class="amt-cell">= Qty × Rate</td></tr>
+        <tr><th>Sr. No.</th><th>Particulars</th><th>HSN/SAC</th><th>Qty</th><th>UOM</th><th>Rate</th><th>Amount</th></tr>
+        <tr><td>1</td><td>e.g. Providing &amp; Fixing Study Table</td><td>9403</td><td>8</td><td>nos</td><td>11450.32</td><td class="amt-cell">= Qty × Rate</td></tr>
       </table>
       <div class="footer-note">Sub-Total = Σ Amount &nbsp;·&nbsp; GST default 18% (editable per PO) &nbsp;·&nbsp; Grand Total = Sub-Total + GST &nbsp;·&nbsp; Amount in words auto-generated</div>
       <div style="margin-top:14px;">
@@ -1763,7 +1763,7 @@ function addPOSection(prefillName, prefillItems) {
     </div>
     <table class="po-items-table">
       <thead>
-        <tr><th>Particulars</th><th>HSN/SAC</th><th>UOM</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr>
+        <tr><th>Particulars</th><th>HSN/SAC</th><th>Qty</th><th>UOM</th><th>Rate</th><th>Amount</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -1803,8 +1803,8 @@ function addPOItemRow(sid, prefill) {
   tr.innerHTML = `
     <td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td>
     <td><input class="f-hsn" value="${escapeHtml(p.hsn || '9403')}" style="width:60px;"></td>
-    <td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || 'nos')}" style="width:55px;"></td>
     <td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:55px;" onchange="recalcPO()"></td>
+    <td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || 'nos')}" style="width:55px;"></td>
     <td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPO()"></td>
     <td class="amt-cell f-amount">0.00</td>
     <td class="item-actions">
@@ -2025,8 +2025,8 @@ function buildDocumentPrintHTML(docType, payload) {
               <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${sec.name ? String.fromCharCode(97 + iIdx) : (iIdx + 1)}</td>
               <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
               <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.hsn || '9403')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
               <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
               <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
               <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
             </tr>
@@ -2048,8 +2048,8 @@ function buildDocumentPrintHTML(docType, payload) {
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${idx + 1}</td>
             <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.hsn || '9403')}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
           </tr>
@@ -2063,8 +2063,8 @@ function buildDocumentPrintHTML(docType, payload) {
             <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:45px;">Sr. No.</th>
             <th style="border:1px solid #94a3b8; padding:6px;">Particulars</th>
             <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">HSN/SAC</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:50px;">UOM</th>
             <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">Qty</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:50px;">UOM</th>
             <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:75px;">Rate (₹)</th>
             <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:90px;">Amount (₹)</th>
           </tr>
@@ -2109,8 +2109,8 @@ function buildDocumentPrintHTML(docType, payload) {
           <tr>
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${itemNumber}</td>
             <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
             ${hasRooms ? `<td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.rooms ?? '-'}</td>` : ''}
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
@@ -2142,8 +2142,8 @@ function buildDocumentPrintHTML(docType, payload) {
             <tr style="background:#d6e9f8; color:#0f172a;">
               <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:45px;">Sr. No.</th>
               <th style="border:1px solid #94a3b8; padding:6px;">Particulars</th>
-              <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">UOM</th>
               <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">Qty/Area</th>
+              <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">UOM</th>
               <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:75px;">Rate (₹)</th>
               ${hasRooms ? `<th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">Rooms</th>` : ''}
               <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:95px;">Amount (₹)</th>
@@ -2666,8 +2666,8 @@ function rebuildPIRow(tr, hasRooms, recalcFn) {
   const rooms = tr.querySelector('.f-rooms')?.value || '';
   const docType = recalcFn === 'recalcPI' ? 'pi' : 'inv';
   tr.innerHTML = hasRooms
-    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td><input class="f-rooms" type="number" value="${rooms}" style="width:55px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`
-    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`;
+    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td><input class="f-rooms" type="number" value="${rooms}" style="width:55px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`
+    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`;
 }
 
 function renderPISectionTable(sid) {
@@ -2675,8 +2675,8 @@ function renderPISectionTable(sid) {
   const hasRooms = div.querySelector('.pi-sec-rooms').checked;
   const thead = div.querySelector(':scope > table.pi-items-table > thead');
   thead.innerHTML = hasRooms
-    ? '<tr><th>Particulars</th><th>UOM</th><th>Qty/Area</th><th>Rate</th><th>No. of Rooms</th><th>Amount</th><th></th></tr>'
-    : '<tr><th>Particulars</th><th>UOM</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr>';
+    ? '<tr><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th><th>Amount</th><th></th></tr>'
+    : '<tr><th>Particulars</th><th>Qty</th><th>UOM</th><th>Rate</th><th>Amount</th><th></th></tr>';
   div.querySelectorAll(':scope > table.pi-items-table > tbody > tr').forEach(tr => rebuildPIRow(tr, hasRooms, 'recalcPI'));
   recalcPI();
 }
@@ -2692,8 +2692,8 @@ function addPIItemRow(sid, prefill) {
   tr.id = rowId;
   tr.dataset.rowId = rowId;
   tr.innerHTML = hasRooms
-    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`
-    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`;
+    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`
+    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`;
   tbody.appendChild(tr);
   recalcPI();
   updateSectionCopyDropdowns('pi');
@@ -2883,8 +2883,8 @@ function renderINVSectionTable(sid) {
   const hasRooms = div.querySelector('.inv-sec-rooms').checked;
   const thead = div.querySelector(':scope > table.pi-items-table > thead');
   thead.innerHTML = hasRooms
-    ? '<tr><th>Particulars</th><th>UOM</th><th>Qty/Area</th><th>Rate</th><th>No. of Rooms</th><th>Amount</th><th></th></tr>'
-    : '<tr><th>Particulars</th><th>UOM</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr>';
+    ? '<tr><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th><th>Amount</th><th></th></tr>'
+    : '<tr><th>Particulars</th><th>Qty</th><th>UOM</th><th>Rate</th><th>Amount</th><th></th></tr>';
   div.querySelectorAll(':scope > table.pi-items-table > tbody > tr').forEach(tr => rebuildPIRow(tr, hasRooms, 'recalcINV'));
   recalcINV();
 }
@@ -2900,8 +2900,8 @@ function addINVItemRow(sid, prefill) {
   tr.id = rowId;
   tr.dataset.rowId = rowId;
   tr.innerHTML = hasRooms
-    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`
-    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`;
+    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`
+    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`;
   tbody.appendChild(tr);
   recalcINV();
   updateSectionCopyDropdowns('inv');

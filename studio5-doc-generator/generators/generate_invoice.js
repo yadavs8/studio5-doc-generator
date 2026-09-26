@@ -30,12 +30,12 @@ const sectionBlocks = [];
 payload.sections.forEach((sec, si) => {
   const hasRooms = sec.has_rooms;
   const colWidths = hasRooms
-    ? [500, 3400, 900, 1000, 1000, 1100, 1406]   // Sr, Particulars, UOM, Qty/Area, Rate, No.Rooms, Amount
-    : [500, 4900, 1000, 1300, 1300, 1306];       // Sr, Particulars, UOM, Qty, Rate, Amount
+    ? [500, 3400, 1000, 900, 1000, 1100, 1406]   // Sr, Particulars, Qty/Area, UOM, Rate, No.Rooms, Amount
+    : [500, 4900, 1300, 1000, 1300, 1306];       // Sr, Particulars, Qty, UOM, Rate, Amount
 
   const headers = hasRooms
-    ? ["Sr. No.", "Particulars", "UOM", "Qty/Area", "Rate", "No. of Rooms", "Amount"]
-    : ["Sr. No.", "Particulars", "UOM", "Qty", "Rate", "Amount"];
+    ? ["Sr. No.", "Particulars", "Qty/Area", "UOM", "Rate", "No. of Rooms", "Amount"]
+    : ["Sr. No.", "Particulars", "Qty", "UOM", "Rate", "Amount"];
 
   const headerRow = new TableRow({
     children: headers.map((h, i) => cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER }))
@@ -63,8 +63,8 @@ payload.sections.forEach((sec, si) => {
       const cells = [
         cell(letter, { width: colWidths[0], align: AlignmentType.CENTER }),
         cell(it.particulars, { width: colWidths[1] }),
-        cell(it.uom, { width: colWidths[2], align: AlignmentType.CENTER }),
-        cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
+        cell(it.qty, { width: colWidths[2], align: AlignmentType.CENTER }),
+        cell(it.uom, { width: colWidths[3], align: AlignmentType.CENTER }),
         cell(fmt(it.rate), { width: colWidths[4], align: AlignmentType.RIGHT }),
       ];
       if (hasRooms) cells.push(cell(it.rooms, { width: colWidths[5], align: AlignmentType.CENTER }));
@@ -92,8 +92,8 @@ payload.sections.forEach((sec, si) => {
       const cells = [
         cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
         cell(it.particulars, { width: colWidths[1] }),
-        cell(it.uom, { width: colWidths[2], align: AlignmentType.CENTER }),
-        cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
+        cell(it.qty, { width: colWidths[2], align: AlignmentType.CENTER }),
+        cell(it.uom, { width: colWidths[3], align: AlignmentType.CENTER }),
         cell(fmt(it.rate), { width: colWidths[4], align: AlignmentType.RIGHT }),
       ];
       if (hasRooms) cells.push(cell(it.rooms, { width: colWidths[5], align: AlignmentType.CENTER }));

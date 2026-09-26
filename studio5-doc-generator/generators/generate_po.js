@@ -78,7 +78,7 @@ const tableBlocks = [];
 if (payload.sections && Array.isArray(payload.sections) && payload.sections.length > 0) {
   payload.sections.forEach((sec, si) => {
     const secHeaderRow = new TableRow({
-      children: ["Sr. No.", "Particulars", "HSN/SAC", "UOM", "Qty", "Rate", "Amount"].map((h, i) =>
+      children: ["Sr. No.", "Particulars", "HSN/SAC", "Qty", "UOM", "Rate", "Amount"].map((h, i) =>
         cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
       )
     });
@@ -106,8 +106,8 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
             cell(letter, { width: colWidths[0], align: AlignmentType.CENTER }),
             cell(it.particulars, { width: colWidths[1] }),
             cell(it.hsn || "9403", { width: colWidths[2], align: AlignmentType.CENTER }),
-            cell(it.uom || "nos", { width: colWidths[3], align: AlignmentType.CENTER }),
-            cell(it.qty, { width: colWidths[4], align: AlignmentType.CENTER }),
+            cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
+            cell(it.uom || "nos", { width: colWidths[4], align: AlignmentType.CENTER }),
             cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
             cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
           ]
@@ -132,8 +132,8 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
             cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
             cell(it.particulars, { width: colWidths[1] }),
             cell(it.hsn || "9403", { width: colWidths[2], align: AlignmentType.CENTER }),
-            cell(it.uom || "nos", { width: colWidths[3], align: AlignmentType.CENTER }),
-            cell(it.qty, { width: colWidths[4], align: AlignmentType.CENTER }),
+            cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
+            cell(it.uom || "nos", { width: colWidths[4], align: AlignmentType.CENTER }),
             cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
             cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
           ]
@@ -160,7 +160,7 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
   }));
 } else {
   const headerRow = new TableRow({
-    children: ["Sr. No.", "Particulars", "HSN/SAC", "UOM", "Qty", "Rate", "Amount"].map((h, i) =>
+    children: ["Sr. No.", "Particulars", "HSN/SAC", "Qty", "UOM", "Rate", "Amount"].map((h, i) =>
       cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
     )
   });
@@ -170,8 +170,8 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
       cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
       cell(it.particulars, { width: colWidths[1] }),
       cell(it.hsn || "9403", { width: colWidths[2], align: AlignmentType.CENTER }),
-      cell(it.uom || "nos", { width: colWidths[3], align: AlignmentType.CENTER }),
-      cell(it.qty, { width: colWidths[4], align: AlignmentType.CENTER }),
+      cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
+      cell(it.uom || "nos", { width: colWidths[4], align: AlignmentType.CENTER }),
       cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
       cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
     ]
