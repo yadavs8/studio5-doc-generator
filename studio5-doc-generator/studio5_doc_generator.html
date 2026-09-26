@@ -2533,7 +2533,7 @@ async function stopSmartDictation(rowId) {
       const descInp = document.getElementById(`desc-${rowId}`);
       const oldPlaceholder = descInp ? descInp.placeholder : '';
       if (descInp) {
-        descInp.placeholder = '⏳ Transcribing with Whisper & Parsing with Claude...';
+        descInp.placeholder = '⏳ AI is listening & estimating (Qty, UOM, Rate)...';
       }
 
       try {
@@ -2544,10 +2544,13 @@ async function stopSmartDictation(rowId) {
         const formData = new FormData();
         formData.append('audio', audioBlob, `speech-${Date.now()}.${ext}`);
 
-        if (openAIApiKey) {
+        if (typeof geminiApiKey !== 'undefined' && geminiApiKey) {
+          formData.append('geminiApiKey', geminiApiKey);
+        }
+        if (typeof openAIApiKey !== 'undefined' && openAIApiKey) {
           formData.append('openaiApiKey', openAIApiKey);
         }
-        if (anthropicApiKey) {
+        if (typeof anthropicApiKey !== 'undefined' && anthropicApiKey) {
           formData.append('anthropicApiKey', anthropicApiKey);
         }
 
@@ -2556,8 +2559,9 @@ async function stopSmartDictation(rowId) {
           : (window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000');
 
         const headers = {};
-        if (openAIApiKey) headers['x-openai-key'] = openAIApiKey;
-        if (anthropicApiKey) headers['x-anthropic-key'] = anthropicApiKey;
+        if (typeof geminiApiKey !== 'undefined' && geminiApiKey) headers['x-gemini-key'] = geminiApiKey;
+        if (typeof openAIApiKey !== 'undefined' && openAIApiKey) headers['x-openai-key'] = openAIApiKey;
+        if (typeof anthropicApiKey !== 'undefined' && anthropicApiKey) headers['x-anthropic-key'] = anthropicApiKey;
 
         const res = await fetch(`${effectiveBackend}/api/parse-item-audio`, {
           method: 'POST',

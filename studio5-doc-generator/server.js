@@ -397,43 +397,133 @@ app.post("/api/parse-item-audio", upload.single("audio"), async (req, res) => {
       return res.status(400).json({ error: "No audio file uploaded" });
     }
 
+    const geminiApiKey = req.body.geminiApiKey || req.headers["x-gemini-key"] || process.env.GEMINI_API_KEY;
     const openaiApiKey = req.body.openaiApiKey || req.headers["x-openai-key"] || process.env.OPENAI_API_KEY;
     const anthropicApiKey = req.body.anthropicApiKey || req.headers["x-anthropic-key"] || process.env.ANTHROPIC_API_KEY;
 
-    if (!openaiApiKey) {
-      return res.status(400).json({
-        error: "OpenAI API key is required for voice transcription. Please set OPENAI_API_KEY or configure it in the Library tab."
+    // --- STRATEGY 1: GOOGLE GEMINI (100% Free Tier, no prepaid credit limits) ---
+    if (geminiApiKey) {
+      try {
+        console.log(`[parse-item-audio] Processing audio via Google Gemini (Free Tier)...`);
+        const audioBuffer = fs.readFileSync(req.file.path);
+        const cleanBase64 = audioBuffer.toString("base64");
+
+        let actualMime = req.file.mimetype || "audio/webm";
+        if (actualMime.includes("webm")) actualMime = "audio/webm";
+        else if (actualMime.includes("mp4")) actualMime = "audio/mp4";
+        else if (actualMime.includes("ogg")) actualMime = "audio/ogg";
+        else if (actualMime.includes("wav")) actualMime = "audio/wav";
+        else actualMime = "audio/webm";
+
+        const promptText = `You are the Chief Fit-Out Estimator for Studio5 Interiors (an interior contracting firm in India).
+Listen carefully to this spoken audio in Hindi, Hinglish, or English.
+Parse the spoken words into a structured contracting line item:
+1. Translate informal or slang terms (e.g., 'malba') into formal contracting terms ('Debris Carting Away').
+2. Format the description professionally according to Indian interior contracting standards (e.g., 'Providing & fixing Gypsum board false ceiling in Master Bedroom').
+3. UOM must strictly be one of: 'sqft', 'rft', 'nos', or 'lumpsum'.
+   - Area works (ceilings, flooring, wall panelling, painting, plastering, dismantling) -> 'sqft'
+   - Running length (cove profiles, skirting, pelmet, kitchen counter length, AC copper piping) -> 'rft'
+   - Discrete fixtures (mirrors, lights, doors, locks, vanity, sanitaryware, chairs) -> 'nos'
+   - General cleaning / bulk dumping -> 'lumpsum'
+4. If rate or quantity is not explicitly spoken, return null for those fields.
+
+Return ONLY valid JSON matching this schema:
+{
+  "transcript": "string (the exact spoken transcription in Hindi/English)",
+  "description": "string (formal contractor line item description)",
+  "uom": "string",
+  "qty": number | null,
+  "rate": number | null
+}`;
+
+        const callGeminiAudio = async (modelName) => {
+          return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { inlineData: { mimeType: actualMime, data: cleanBase64 } },
+                    { text: promptText }
+                  ]
+                }
+              ],
+              generationConfig: { responseMimeType: "application/json" }
+            })
+          });
+        };
+
+        const available = await getAvailableGeminiModels(geminiApiKey);
+        const preferred = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp"];
+        let candidateModels = [];
+        if (available.length > 0) {
+          for (const p of preferred) {
+            if (available.includes(p)) candidateModels.push(p);
+          }
+          for (const m of available) {
+            if (!candidateModels.includes(m) && m.includes("flash")) candidateModels.push(m);
+          }
+          if (candidateModels.length === 0) candidateModels = available;
+        } else {
+          candidateModels = preferred;
+        }
+
+        let geminiResponse = null;
+        let lastGeminiError = "";
+        for (const model of candidateModels) {
+          console.log(`[parse-item-audio] Attempting Gemini model: ${model}`);
+          geminiResponse = await callGeminiAudio(model);
+          if (geminiResponse.ok) break;
+          lastGeminiError = await geminiResponse.text();
+          console.warn(`[parse-item-audio] Gemini model ${model} error: ${lastGeminiError}`);
+        }
+
+        if (geminiResponse && geminiResponse.ok) {
+          const gData = await geminiResponse.json();
+          const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawText) {
+            let parsed = null;
+            const match = rawText.match(/\{[\s\S]*\}/);
+            parsed = match ? JSON.parse(match[0]) : JSON.parse(rawText);
+            return res.json({
+              success: true,
+              engine: "gemini-free",
+              transcript: parsed.transcript || "",
+              data: parsed,
+              description: parsed.description || "",
+              uom: parsed.uom || "",
+              qty: parsed.qty ?? null,
+              rate: parsed.rate ?? null
+            });
+          }
+        }
+      } catch (geminiErr) {
+        console.warn("[parse-item-audio] Gemini attempt failed, trying fallback:", geminiErr.message);
+      }
+    }
+
+    // --- STRATEGY 2: OPENAI WHISPER + CLAUDE FALLBACK ---
+    if (openaiApiKey && anthropicApiKey) {
+      console.log(`[parse-item-audio] Processing audio via Whisper + Claude fallback...`);
+      const openai = new OpenAI({ apiKey: openaiApiKey });
+      const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+
+      const transcription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(req.file.path),
+        model: "whisper-1",
+        language: "hi"
       });
-    }
 
-    if (!anthropicApiKey) {
-      return res.status(400).json({
-        error: "Anthropic API key is required for estimation parsing. Please set ANTHROPIC_API_KEY or configure it in the Library tab."
-      });
-    }
+      const transcript = (transcription.text || "").trim();
+      if (!transcript) {
+        return res.status(400).json({ error: "No spoken speech was detected in the audio recording." });
+      }
 
-    const openai = new OpenAI({ apiKey: openaiApiKey });
-    const anthropic = new Anthropic({ apiKey: anthropicApiKey });
-
-    console.log(`[parse-item-audio] Transcribing audio with Whisper (${req.file.path})...`);
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(req.file.path),
-      model: "whisper-1",
-      language: "hi"
-    });
-
-    const transcript = (transcription.text || "").trim();
-    console.log(`[parse-item-audio] Transcript: "${transcript}"`);
-
-    if (!transcript) {
-      return res.status(400).json({ error: "No spoken speech was detected in the audio recording." });
-    }
-
-    console.log(`[parse-item-audio] Parsing transcript with Claude 3.5 Sonnet...`);
-    const claudeMsg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1024,
-      system: `You are the Chief Fit-Out Estimator for Studio5 Interiors.
+      const claudeMsg = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 1024,
+        system: `You are the Chief Fit-Out Estimator for Studio5 Interiors.
 Parse this raw spoken transcript into a structured contracting line item.
 The user is speaking in Hindi/English. Translate informal terms (e.g., 'malba') into formal terms ('Debris Carting Away').
 UOM must strictly be one of: 'sqft', 'rft', 'nos', or 'lumpsum'.
@@ -446,34 +536,31 @@ Return ONLY valid JSON matching this schema:
   "qty": number | null,
   "rate": number | null
 }`,
-      messages: [
-        { role: "user", content: transcript }
-      ]
-    });
+        messages: [{ role: "user", content: transcript }]
+      });
 
-    let rawText = "";
-    if (claudeMsg.content && claudeMsg.content.length > 0) {
-      rawText = claudeMsg.content.map(c => c.text || "").join("\n");
+      let rawText = "";
+      if (claudeMsg.content && claudeMsg.content.length > 0) {
+        rawText = claudeMsg.content.map(c => c.text || "").join("\n");
+      }
+
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      const parsedData = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(rawText);
+
+      return res.json({
+        success: true,
+        engine: "whisper-claude",
+        transcript,
+        data: parsedData,
+        description: parsedData.description || "",
+        uom: parsedData.uom || "",
+        qty: parsedData.qty ?? null,
+        rate: parsedData.rate ?? null
+      });
     }
 
-    console.log(`[parse-item-audio] Claude response:`, rawText);
-
-    let parsedData = null;
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      parsedData = JSON.parse(jsonMatch[0]);
-    } else {
-      parsedData = JSON.parse(rawText);
-    }
-
-    return res.json({
-      success: true,
-      transcript,
-      data: parsedData,
-      description: parsedData.description || "",
-      uom: parsedData.uom || "",
-      qty: parsedData.qty ?? null,
-      rate: parsedData.rate ?? null
+    return res.status(400).json({
+      error: "No AI key available. Please configure GEMINI_API_KEY on Render (it is 100% free)."
     });
   } catch (err) {
     console.error("Audio parsing error:", err);
