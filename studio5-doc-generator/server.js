@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -484,6 +485,15 @@ Return ONLY valid JSON matching this schema:
       });
     }
   }
+});
+
+app.get("/api/config-status", (req, res) => {
+  res.json({
+    gemini: !!process.env.GEMINI_API_KEY,
+    openai: !!process.env.OPENAI_API_KEY,
+    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    supabase: !!process.env.SUPABASE_URL
+  });
 });
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));

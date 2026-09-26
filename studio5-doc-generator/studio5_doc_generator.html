@@ -2411,6 +2411,30 @@ async function saveDictationKeys() {
   if (statusEl) statusEl.textContent = 'API keys saved securely on this device.';
 }
 
+async function checkServerConfigStatus() {
+  try {
+    const effectiveBackend = (typeof backendUrl !== 'undefined' && backendUrl)
+      ? backendUrl
+      : (window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000');
+    const res = await fetch(`${effectiveBackend}/api/config-status`);
+    if (res.ok) {
+      const status = await res.json();
+      if (status.gemini) {
+        const gStatus = document.getElementById('gemini-key-status');
+        if (gStatus) {
+          gStatus.innerHTML = '<span style="color:#15803d; font-weight:600;">✓ Active on Server (No device input needed)</span>';
+        }
+      }
+      if (status.openai && status.anthropic) {
+        const dStatus = document.getElementById('dictation-keys-status');
+        if (dStatus) {
+          dStatus.innerHTML = '<span style="color:#15803d; font-weight:600;">✓ Active on Server (OpenAI & Anthropic) — Ready on all phones and devices!</span>';
+        }
+      }
+    }
+  } catch (e) {}
+}
+
 function cleanupRecordingUI(rowId) {
   const row = document.getElementById(rowId);
   const micBtn = document.getElementById(`mic-${rowId}`);
@@ -3095,6 +3119,7 @@ loadBackendUrl().then(() => {
 });
 loadGeminiKey();
 loadDictationKeys();
+checkServerConfigStatus();
 loadCatalogItems();
 loadBuyers();
 loadSites();
