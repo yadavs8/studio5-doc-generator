@@ -247,6 +247,111 @@ const stampBuffer = fs.existsSync(path.join(__dirname, "assets", "stamp.png"))
   ? fs.readFileSync(path.join(__dirname, "assets", "stamp.png"))
   : null;
 
+let customDocsDir = process.env.STUDIO5_DOCS_DIR || null;
+
+function getDocsBaseDir() {
+  if (customDocsDir && fs.existsSync(customDocsDir)) {
+    return customDocsDir;
+  }
+  const defaultDir = path.join(__dirname, "generated_docs");
+  if (!fs.existsSync(defaultDir)) {
+    fs.mkdirSync(defaultDir, { recursive: true });
+  }
+  return defaultDir;
+}
+
+function getDocSubdirName(docType) {
+  if (docType === "pi") return "proforma_invoices";
+  if (docType === "po") return "purchase_orders";
+  if (docType === "inv" || docType === "invoice") return "invoices";
+  if (docType === "challan") return "challans";
+  return "other";
+}
+
+function getTargetDocFolder(docType, dateVal) {
+  const base = getDocsBaseDir();
+  const sub = getDocSubdirName(docType);
+  const dateStr = (dateVal || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, "") || new Date().toISOString().slice(0, 10);
+  const targetDir = path.join(base, sub, dateStr);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  return { targetDir, dateStr };
+}
+
+function getDescriptiveTag(docType, payload) {
+  if (!payload) return "";
+  // 1. Try section names
+  const sectionNames = (payload.sections || [])
+    .map(s => (s.name || "").trim())
+    .filter(Boolean);
+
+  if (sectionNames.length > 0) {
+    const cleaned = sectionNames
+      .map(n => n.replace(/[\\/:*?"<>|&#%{}@+!]/g, "").trim().replace(/\s+/g, "_"))
+      .filter(Boolean);
+    if (cleaned.length === 1) return cleaned[0].slice(0, 30);
+    if (cleaned.length === 2) return (cleaned[0] + "_" + cleaned[1]).slice(0, 35);
+    return (cleaned[0] + "_etc").slice(0, 30);
+  }
+
+  // 2. Try subject
+  if (payload.subject && payload.subject.trim()) {
+    const s = payload.subject.replace(/[\\/:*?"<>|&#%{}@+!]/g, "").trim().replace(/\s+/g, "_");
+    if (s) return s.slice(0, 30);
+  }
+
+  // 3. Try buyer / vendor / receiver
+  const party = (payload.buyer && payload.buyer.name) || (payload.vendor && payload.vendor.name) || payload.receiver_name;
+  if (party && party.trim()) {
+    const p = party.replace(/[\\/:*?"<>|&#%{}@+!]/g, "").trim().replace(/\s+/g, "_");
+    if (p) return p.slice(0, 25);
+  }
+
+  return "";
+}
+
+function buildDescriptiveDocFilename(docType, payload, docNo, ext) {
+  let typePrefix = "Document";
+  let dateVal = "";
+
+  if (docType === "pi") {
+    typePrefix = "PI";
+    dateVal = payload && payload.pi_date;
+  } else if (docType === "po") {
+    typePrefix = "PO";
+    dateVal = payload && payload.po_date;
+  } else if (docType === "inv" || docType === "invoice") {
+    typePrefix = "Invoice";
+    dateVal = payload && payload.invoice_date;
+  } else if (docType === "challan") {
+    typePrefix = "Challan";
+    dateVal = payload && payload.challan_date;
+  }
+
+  const dateStr = (dateVal || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, "") || new Date().toISOString().slice(0, 10);
+  const tag = getDescriptiveTag(docType, payload);
+  const cleanDocNo = String(docNo || "DRAFT").replace(/[\\/]/g, "-").trim();
+
+  if (tag) {
+    return `${typePrefix}_${dateStr}_${tag}_${cleanDocNo}.${ext}`;
+  }
+  return `${typePrefix}_${dateStr}_${cleanDocNo}.${ext}`;
+}
+
+function autoSaveDocBuffer(docType, dateVal, filename, buffer) {
+  try {
+    const { targetDir } = getTargetDocFolder(docType, dateVal);
+    const fullPath = path.join(targetDir, filename);
+    fs.writeFileSync(fullPath, buffer);
+    console.log(`[AutoSave] Saved ${docType} to ${fullPath}`);
+    return { ok: true, path: fullPath };
+  } catch (err) {
+    console.warn(`[AutoSave] Warning: Could not auto-save ${filename}:`, err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
 function sendDocx(res, buffer, filename, docNumber) {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -332,7 +437,9 @@ app.post("/generate/purchase-order", async (req, res) => {
       return res.json({ success: true, docNumber, payload });
     }
     const buf = await generatePO(payload, logoBuffer, stampBuffer);
-    sendDocx(res, buf, `Purchase_Order_${safeFilenamePart(docNumber)}.docx`, docNumber);
+    const filename = buildDescriptiveDocFilename("po", payload, docNumber, "docx");
+    autoSaveDocBuffer("po", payload.po_date, filename, buf);
+    sendDocx(res, buf, filename, docNumber);
   } catch (e) {
     handleLedgerError(res, e);
   }
@@ -353,7 +460,9 @@ app.post("/generate/proforma-invoice", async (req, res) => {
       return res.json({ success: true, docNumber, payload });
     }
     const buf = await generatePI(payload, logoBuffer, stampBuffer);
-    sendDocx(res, buf, `Proforma_Invoice_${safeFilenamePart(docNumber)}.docx`, docNumber);
+    const filename = buildDescriptiveDocFilename("pi", payload, docNumber, "docx");
+    autoSaveDocBuffer("pi", payload.pi_date, filename, buf);
+    sendDocx(res, buf, filename, docNumber);
   } catch (e) {
     handleLedgerError(res, e);
   }
@@ -375,7 +484,9 @@ app.post("/generate/invoice", async (req, res) => {
       return res.json({ success: true, docNumber, payload });
     }
     const buf = await generateInvoice(payload, logoBuffer, stampBuffer);
-    sendDocx(res, buf, `Invoice_${safeFilenamePart(docNumber)}.docx`, docNumber);
+    const filename = buildDescriptiveDocFilename("invoice", payload, docNumber, "docx");
+    autoSaveDocBuffer("invoice", payload.invoice_date, filename, buf);
+    sendDocx(res, buf, filename, docNumber);
   } catch (e) {
     handleLedgerError(res, e);
   }
@@ -396,9 +507,129 @@ app.post("/generate/challan", async (req, res) => {
       return res.json({ success: true, docNumber, payload });
     }
     const buf = await generateChallan(payload, logoBuffer, stampBuffer);
-    sendDocx(res, buf, `Delivery_Challan_${safeFilenamePart(docNumber)}.docx`, docNumber);
+    const filename = buildDescriptiveDocFilename("challan", payload, docNumber, "docx");
+    autoSaveDocBuffer("challan", payload.challan_date, filename, buf);
+    sendDocx(res, buf, filename, docNumber);
   } catch (e) {
     handleLedgerError(res, e);
+  }
+});
+
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
+
+// POST /api/save-generated-doc — receives generated PDF (or other files) from client
+app.post("/api/save-generated-doc", memoryUpload.single("file"), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file provided" });
+    }
+    const docType = req.body.docType || "pi";
+    const docDate = req.body.docDate || "";
+    const filename = req.body.filename || req.file.originalname || `document_${Date.now()}.pdf`;
+
+    const { targetDir, dateStr } = getTargetDocFolder(docType, docDate);
+    const filePath = path.join(targetDir, filename);
+    fs.writeFileSync(filePath, req.file.buffer);
+
+    console.log(`[AutoSave] Saved uploaded ${docType} file to: ${filePath}`);
+    res.json({
+      success: true,
+      savedPath: filePath,
+      folder: targetDir,
+      dateFolder: dateStr,
+      filename
+    });
+  } catch (err) {
+    console.error("[AutoSave] Error saving uploaded file:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/open-folder — opens the dated folder in Windows Explorer or macOS Finder
+app.post("/api/open-folder", (req, res) => {
+  try {
+    const { docType, date } = req.body;
+    let targetDir = getDocsBaseDir();
+    if (docType && docType !== "all") {
+      const folderRes = getTargetDocFolder(docType, date);
+      targetDir = folderRes.targetDir;
+    }
+
+    if (process.platform === "win32") {
+      require("child_process").exec(`explorer.exe "${targetDir}"`);
+      return res.json({ ok: true, platform: "win32", path: targetDir });
+    } else if (process.platform === "darwin") {
+      require("child_process").exec(`open "${targetDir}"`);
+      return res.json({ ok: true, platform: "darwin", path: targetDir });
+    } else {
+      return res.json({ ok: true, platform: "linux", path: targetDir, message: "Server running in cloud/Linux" });
+    }
+  } catch (err) {
+    console.error("Open folder error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/generated-docs — lists organized folders and documents
+app.get("/api/generated-docs", (req, res) => {
+  try {
+    const docType = req.query.docType || "pi";
+    const sub = getDocSubdirName(docType);
+    const baseDir = path.join(getDocsBaseDir(), sub);
+
+    if (!fs.existsSync(baseDir)) {
+      return res.json({ docType, baseDir, folders: [] });
+    }
+
+    const folders = [];
+    const dateEntries = fs.readdirSync(baseDir, { withFileTypes: true });
+    dateEntries
+      .filter(d => d.isDirectory())
+      .sort((a, b) => b.name.localeCompare(a.name))
+      .forEach(d => {
+        const folderPath = path.join(baseDir, d.name);
+        const files = fs.readdirSync(folderPath).map(f => {
+          const stat = fs.statSync(path.join(folderPath, f));
+          return {
+            name: f,
+            size: stat.size,
+            mtime: stat.mtime
+          };
+        });
+        folders.push({
+          date: d.name,
+          path: folderPath,
+          files
+        });
+      });
+
+    res.json({ docType, baseDir, folders });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/download-file — download any archived document
+app.get("/api/download-file", (req, res) => {
+  try {
+    const { docType, date, filename } = req.query;
+    if (!docType || !date || !filename) {
+      return res.status(400).send("Missing parameters");
+    }
+    const safeDate = String(date).replace(/[^\d-]/g, "");
+    const safeFile = path.basename(String(filename));
+    const sub = getDocSubdirName(docType);
+    const filePath = path.join(getDocsBaseDir(), sub, safeDate, safeFile);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send("File not found");
+    }
+    res.download(filePath, safeFile);
+  } catch (e) {
+    res.status(500).send(e.message);
   }
 });
 

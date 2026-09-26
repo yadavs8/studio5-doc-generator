@@ -217,8 +217,10 @@
             <option value="challan">Delivery Challan</option>
           </select>
         </div>
-        <div style="display:flex; align-items:flex-end;">
+        <div style="display:flex; align-items:flex-end; gap:8px; flex-wrap:wrap;">
           <button class="btn secondary small" onclick="loadRecentDocuments()">Refresh</button>
+          <button class="btn secondary small" onclick="openDatedFolder('pi')">📂 Open PI Folder</button>
+          <button class="btn secondary small" onclick="openDatedFolder('')">📂 Open All Generated Docs</button>
         </div>
       </div>
       <table style="margin-top:10px;">
@@ -436,7 +438,11 @@
       <button class="btn" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="generatePO('pdf')">📄 Generate PDF →</button>
       <button class="btn" onclick="generatePO('docx')">Generate Word (.docx) →</button>
       <button class="btn secondary" type="button" onclick="previewDocument('po')">👁️ Preview</button>
+      <button class="btn secondary small" type="button" onclick="openDatedFolder('po', document.getElementById('gen-podate').value)">📂 Open PO Folder</button>
       <span class="status" id="gen-status"></span>
+    </div>
+    <div style="font-size:12px; color:#64748b; margin-top:8px; display:flex; align-items:center; gap:6px;">
+      <span>📁 <strong>Organized Auto-Save:</strong> Every Purchase Order automatically saves to <code>generated_docs/purchase_orders/YYYY-MM-DD/</code> with date, section name &amp; document number.</span>
     </div>
 
     <div class="card" id="output-card" style="display:none; margin-top:16px;">
@@ -518,7 +524,11 @@
       <button class="btn" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="generatePI('pdf')">📄 Generate PDF →</button>
       <button class="btn" onclick="generatePI('docx')">Generate Proforma Invoice →</button>
       <button class="btn secondary" type="button" onclick="previewDocument('pi')">👁️ Preview</button>
+      <button class="btn secondary small" type="button" onclick="openDatedFolder('pi', document.getElementById('pi-date').value)">📂 Open PI Folder</button>
       <span class="status" id="pi-gen-status"></span>
+    </div>
+    <div style="font-size:12px; color:#64748b; margin-top:8px; display:flex; align-items:center; gap:6px;">
+      <span>📁 <strong>Organized Auto-Save:</strong> Every Proforma Invoice automatically saves to <code>generated_docs/proforma_invoices/YYYY-MM-DD/</code> with date, section name &amp; document number in filename.</span>
     </div>
 
     <div class="card" id="pi-output-card" style="display:none; margin-top:16px;">
@@ -599,7 +609,11 @@
       <button class="btn" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="generateINV('pdf')">📄 Generate PDF →</button>
       <button class="btn" onclick="generateINV('docx')">Generate Invoice →</button>
       <button class="btn secondary" type="button" onclick="previewDocument('inv')">👁️ Preview</button>
+      <button class="btn secondary small" type="button" onclick="openDatedFolder('inv', document.getElementById('inv-date').value)">📂 Open Invoice Folder</button>
       <span class="status" id="inv-gen-status"></span>
+    </div>
+    <div style="font-size:12px; color:#64748b; margin-top:8px; display:flex; align-items:center; gap:6px;">
+      <span>📁 <strong>Organized Auto-Save:</strong> Every Tax Invoice automatically saves to <code>generated_docs/invoices/YYYY-MM-DD/</code> with date, section name &amp; document number.</span>
     </div>
 
     <div class="card" id="inv-output-card" style="display:none; margin-top:16px;">
@@ -676,7 +690,11 @@
       <button class="btn" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="generateChallan('pdf')">📄 Generate PDF →</button>
       <button class="btn" onclick="generateChallan('docx')">Generate Challan →</button>
       <button class="btn secondary" type="button" onclick="previewDocument('challan')">👁️ Preview</button>
+      <button class="btn secondary small" type="button" onclick="openDatedFolder('challan', document.getElementById('challan-date').value)">📂 Open Challan Folder</button>
       <span class="status" id="challan-gen-status"></span>
+    </div>
+    <div style="font-size:12px; color:#64748b; margin-top:8px; display:flex; align-items:center; gap:6px;">
+      <span>📁 <strong>Organized Auto-Save:</strong> Every Delivery Challan automatically saves to <code>generated_docs/challans/YYYY-MM-DD/</code> with date &amp; document number.</span>
     </div>
 
     <div class="card" id="challan-output-card" style="display:none; margin-top:16px;">
@@ -897,7 +915,19 @@ async function generateViaBackend(endpoint, payload, filenamePrefix, statusElId)
     }
     const docNumber = res.headers.get('X-Document-Number') || null;
     const blob = await res.blob();
-    const filename = filenamePrefix + '_' + (docNumber || 'draft').replace(/[\\/]/g, '-') + '.docx';
+    const docTypeKey = endpoint.includes('proforma') ? 'pi' : (endpoint.includes('purchase') ? 'po' : (endpoint.includes('challan') ? 'challan' : 'inv'));
+    const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '') || new Date().toISOString().slice(0, 10);
+
+    let filename = '';
+    const disp = res.headers.get('Content-Disposition');
+    if (disp && disp.includes('filename="')) {
+      filename = disp.split('filename="')[1].split('"')[0];
+    } else if (typeof buildDescriptiveDocFilename === 'function') {
+      filename = buildDescriptiveDocFilename(docTypeKey, payload, docNumber, 'docx');
+    } else {
+      filename = filenamePrefix + '_' + (docNumber || 'draft').replace(/[\\/]/g, '-') + '.docx';
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -906,7 +936,8 @@ async function generateViaBackend(endpoint, payload, filenamePrefix, statusElId)
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    statusEl.textContent = '✓ Generated ' + (docNumber || filename) + ' — downloaded.';
+
+    statusEl.innerHTML = `✓ Generated ${docNumber || filename} — Saved in folder: ${dateStr}/ <button type="button" class="btn secondary" style="padding:2px 7px; font-size:11px; margin-left:6px; vertical-align:middle;" onclick="openDatedFolder('${docTypeKey}', '${dateStr}')">📂 Open Folder</button>`;
     return { ok: true, docNumber };
   } catch (e) {
     statusEl.textContent = 'Error: could not reach backend (' + e.message + ')';
@@ -2325,6 +2356,95 @@ function buildDocumentPrintHTML(docType, payload) {
   `;
 }
 
+function getDescriptiveTag(docType, payload) {
+  if (!payload) return '';
+  // 1. Try section names
+  const sectionNames = (payload.sections || [])
+    .map(s => (s.name || '').trim())
+    .filter(Boolean);
+
+  if (sectionNames.length > 0) {
+    const cleaned = sectionNames
+      .map(n => n.replace(/[\\/:*?"<>|&#%{}@+!]/g, '').trim().replace(/\s+/g, '_'))
+      .filter(Boolean);
+    if (cleaned.length === 1) return cleaned[0].slice(0, 30);
+    if (cleaned.length === 2) return (cleaned[0] + '_' + cleaned[1]).slice(0, 35);
+    return (cleaned[0] + '_etc').slice(0, 30);
+  }
+
+  // 2. Try subject
+  if (payload.subject && payload.subject.trim()) {
+    const s = payload.subject.replace(/[\\/:*?"<>|&#%{}@+!]/g, '').trim().replace(/\s+/g, '_');
+    if (s) return s.slice(0, 30);
+  }
+
+  // 3. Try buyer / vendor / receiver
+  const party = (payload.buyer && payload.buyer.name) || (payload.vendor && payload.vendor.name) || payload.receiver_name;
+  if (party && party.trim()) {
+    const p = party.replace(/[\\/:*?"<>|&#%{}@+!]/g, '').trim().replace(/\s+/g, '_');
+    if (p) return p.slice(0, 25);
+  }
+
+  return '';
+}
+
+function buildDescriptiveDocFilename(docType, payload, docNo, ext) {
+  let typePrefix = 'Document';
+  let dateVal = '';
+
+  if (docType === 'pi') {
+    typePrefix = 'PI';
+    dateVal = payload && payload.pi_date;
+  } else if (docType === 'po') {
+    typePrefix = 'PO';
+    dateVal = payload && payload.po_date;
+  } else if (docType === 'inv' || docType === 'invoice') {
+    typePrefix = 'Invoice';
+    dateVal = payload && payload.invoice_date;
+  } else if (docType === 'challan') {
+    typePrefix = 'Challan';
+    dateVal = payload && payload.challan_date;
+  }
+
+  const dateStr = (dateVal || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '') || new Date().toISOString().slice(0, 10);
+  const tag = getDescriptiveTag(docType, payload);
+  const cleanDocNo = String(docNo || 'DRAFT').replace(/[\\/]/g, '-').trim();
+
+  if (tag) {
+    return `${typePrefix}_${dateStr}_${tag}_${cleanDocNo}.${ext}`;
+  }
+  return `${typePrefix}_${dateStr}_${cleanDocNo}.${ext}`;
+}
+
+async function openDatedFolder(docType, dateVal) {
+  if (!backendUrl) {
+    if (window.location.protocol.startsWith('http')) backendUrl = window.location.origin;
+  }
+  if (!backendUrl) {
+    alert('Please connect to the backend server to open folders.');
+    return;
+  }
+  try {
+    const res = await fetch(backendUrl + '/api/open-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docType, date: dateVal })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (data.platform === 'win32' || data.platform === 'darwin') {
+        // Opened automatically in OS Explorer / Finder
+      } else {
+        alert('Saved on server at:\n' + data.path);
+      }
+    } else {
+      alert('Could not open folder: ' + (data.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Could not reach backend to open folder: ' + err.message);
+  }
+}
+
 async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusElId, docType, fieldId) {
   const statusEl = document.getElementById(statusElId);
   if (!backendUrl) {
@@ -2364,6 +2484,10 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
   }
 
   const currentDocNo = allocatedDocNo || payload.po_no || payload.pi_no || payload.invoice_no || payload.challan_no || 'DRAFT';
+  const cleanFilename = buildDescriptiveDocFilename(docType, payload, currentDocNo, 'pdf');
+  const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '') || new Date().toISOString().slice(0, 10);
+  const sectionTag = getDescriptiveTag(docType, payload);
+
   statusEl.textContent = 'Rendering PDF...';
 
   // Create temporary container for html2pdf
@@ -2389,7 +2513,6 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
     });
   }));
 
-  const cleanFilename = `${filenamePrefix}_${currentDocNo.replace(/[\\/]/g, '-')}.pdf`;
   const opt = {
     margin: [8, 8, 8, 8],
     filename: cleanFilename,
@@ -2414,8 +2537,44 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
   };
 
   try {
-    await html2pdf().set(opt).from(printWrapper).save();
-    statusEl.textContent = `✓ Generated ${currentDocNo} — PDF downloaded!`;
+    const worker = html2pdf().set(opt).from(printWrapper);
+    const pdfBlob = await worker.output('blob');
+
+    // Trigger browser download
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = cleanFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+
+    // Auto-save to server dated folder
+    let savedMsg = '';
+    if (backendUrl) {
+      try {
+        const fd = new FormData();
+        fd.append('file', pdfBlob, cleanFilename);
+        fd.append('docType', docType);
+        fd.append('docDate', dateStr);
+        fd.append('docNumber', currentDocNo);
+        fd.append('sectionName', sectionTag);
+        fd.append('filename', cleanFilename);
+        const saveRes = await fetch(backendUrl + '/api/save-generated-doc', {
+          method: 'POST',
+          body: fd
+        });
+        if (saveRes.ok) {
+          savedMsg = ` — Saved in folder: ${dateStr}/`;
+        }
+      } catch (saveErr) {
+        console.warn('Auto-save error:', saveErr);
+      }
+    }
+
+    statusEl.innerHTML = `✓ Generated ${currentDocNo}${savedMsg} <button type="button" class="btn secondary" style="padding:2px 7px; font-size:11px; margin-left:6px; vertical-align:middle;" onclick="openDatedFolder('${docType}', '${dateStr}')">📂 Open Folder</button>`;
+
     if (typeof loadRecentDocuments === 'function') {
       setTimeout(loadRecentDocuments, 1000);
     }
@@ -2458,8 +2617,9 @@ async function downloadCurrentPreviewPDF() {
   const { docType, payload } = currentPreviewDoc;
 
   const docNo = payload.po_no || payload.pi_no || payload.invoice_no || payload.challan_no || 'doc';
-  const prefix = (payload.document_type || 'Document').replace(/\s+/g, '_');
-  const filename = `${prefix}_${docNo.replace(/[\\/]/g, '-')}.pdf`;
+  const cleanFilename = buildDescriptiveDocFilename(docType, payload, docNo, 'pdf');
+  const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '') || new Date().toISOString().slice(0, 10);
+  const sectionTag = getDescriptiveTag(docType, payload);
 
   // Create clean off-screen renderer for consistent high-quality output
   const printWrapper = document.createElement('div');
@@ -2485,7 +2645,7 @@ async function downloadCurrentPreviewPDF() {
 
   const opt = {
     margin: [8, 8, 8, 8],
-    filename: filename,
+    filename: cleanFilename,
     image: { type: 'jpeg', quality: 0.98 },
     pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
     html2canvas: {
@@ -2507,7 +2667,35 @@ async function downloadCurrentPreviewPDF() {
   };
 
   try {
-    await html2pdf().set(opt).from(printWrapper).save();
+    const worker = html2pdf().set(opt).from(printWrapper);
+    const pdfBlob = await worker.output('blob');
+
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = cleanFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+
+    if (backendUrl) {
+      try {
+        const fd = new FormData();
+        fd.append('file', pdfBlob, cleanFilename);
+        fd.append('docType', docType);
+        fd.append('docDate', dateStr);
+        fd.append('docNumber', docNo);
+        fd.append('sectionName', sectionTag);
+        fd.append('filename', cleanFilename);
+        await fetch(backendUrl + '/api/save-generated-doc', {
+          method: 'POST',
+          body: fd
+        });
+      } catch (saveErr) {
+        console.warn('Auto-save preview copy error:', saveErr);
+      }
+    }
   } catch (e) {
     console.error('PDF download error:', e);
     alert('Could not download PDF: ' + e.message);
