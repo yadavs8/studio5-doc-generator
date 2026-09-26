@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Studio5 Docs">
 <link rel="apple-touch-icon" href="/assets/logo.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
   :root {
     --bg: #f7f5f2;
@@ -430,8 +431,12 @@
       <div class="footer-note" id="words-preview" style="font-style:italic;"></div>
     </div>
 
-    <button class="btn" onclick="generatePO()">Generate Purchase Order →</button>
-    <span class="status" id="gen-status"></span>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:14px;">
+      <button class="btn" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="generatePO('pdf')">📄 Generate PDF →</button>
+      <button class="btn" onclick="generatePO('docx')">Generate Word (.docx) →</button>
+      <button class="btn secondary" type="button" onclick="previewDocument('po')">👁️ Preview</button>
+      <span class="status" id="gen-status"></span>
+    </div>
 
     <div class="card" id="output-card" style="display:none; margin-top:16px;">
       <h2>3. Copy this and paste it to Claude in chat</h2>
@@ -508,8 +513,12 @@
       <input id="pi-payment-terms" value="50% Advance at the time of Order, 40% at the time of running, 10% after completion of the proposed work.">
     </div>
 
-    <button class="btn" onclick="generatePI()">Generate Proforma Invoice →</button>
-    <span class="status" id="pi-gen-status"></span>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:14px;">
+      <button class="btn" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="generatePI('pdf')">📄 Generate PDF →</button>
+      <button class="btn" onclick="generatePI('docx')">Generate Proforma Invoice →</button>
+      <button class="btn secondary" type="button" onclick="previewDocument('pi')">👁️ Preview</button>
+      <span class="status" id="pi-gen-status"></span>
+    </div>
 
     <div class="card" id="pi-output-card" style="display:none; margin-top:16px;">
       <h2>5. Copy this and paste it to Claude in chat</h2>
@@ -585,8 +594,12 @@
       <input id="inv-payment-terms" value="50% Advance at the time of Order, 40% at the time of running, 10% after completion of the proposed work.">
     </div>
 
-    <button class="btn" onclick="generateINV()">Generate Invoice →</button>
-    <span class="status" id="inv-gen-status"></span>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:14px;">
+      <button class="btn" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="generateINV('pdf')">📄 Generate PDF →</button>
+      <button class="btn" onclick="generateINV('docx')">Generate Invoice →</button>
+      <button class="btn secondary" type="button" onclick="previewDocument('inv')">👁️ Preview</button>
+      <span class="status" id="inv-gen-status"></span>
+    </div>
 
     <div class="card" id="inv-output-card" style="display:none; margin-top:16px;">
       <h2>5. Copy this and paste it to Claude in chat</h2>
@@ -658,8 +671,12 @@
       <div class="footer-note">Total Quantity: <span id="challan-total-qty">0</span> <input id="challan-unit-label" value="PCS / SET" style="width:100px; display:inline-block; margin-left:6px;"></div>
     </div>
 
-    <button class="btn" onclick="generateChallan()">Generate Challan →</button>
-    <span class="status" id="challan-gen-status"></span>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:14px;">
+      <button class="btn" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="generateChallan('pdf')">📄 Generate PDF →</button>
+      <button class="btn" onclick="generateChallan('docx')">Generate Challan →</button>
+      <button class="btn secondary" type="button" onclick="previewDocument('challan')">👁️ Preview</button>
+      <span class="status" id="challan-gen-status"></span>
+    </div>
 
     <div class="card" id="challan-output-card" style="display:none; margin-top:16px;">
       <h2>5. Copy this and paste it to Claude in chat</h2>
@@ -986,8 +1003,6 @@ async function voidDocumentPrompt(docType, docNumber) {
 }
 
 let addresses = {};
-let buyers = {};
-let sites = {};
 let itemRowCount = 0;
 
 async function loadLibrary() {
@@ -1857,7 +1872,641 @@ function recalcPO() {
   if (wordsEl) wordsEl.textContent = 'Amount in words: ' + numberToWordsIndian(grand) + ' Rupees';
 }
 
-async function generatePO() {
+let currentPreviewDoc = null;
+
+function buildDocumentPrintHTML(docType, payload) {
+  const addr = payload.issuing_address || addresses[payload.issuing_address_key] || {
+    name: "STUDIO5 INTERIORS PRIVATE LIMITED",
+    line1: "PLOT NO. 129, SECTOR 8, IMT MANESAR",
+    line2: "GURUGRAM, HARYANA - 122052",
+    gstin: "06AALCS5558R1ZX",
+    msme: "UDYAM-HR-05-0062867",
+    email: "info@studio5interiors.com",
+    mobile: "+91 98188 56525"
+  };
+
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  let docTitle = "DOCUMENT";
+  let docNoLabel = "Doc No.";
+  let docNo = "-";
+  let docDate = "-";
+  let extraHeader = "";
+
+  if (docType === 'po') {
+    docTitle = "PURCHASE ORDER";
+    docNoLabel = "PO No.";
+    docNo = payload.po_no || "DRAFT";
+    docDate = payload.po_date || "-";
+  } else if (docType === 'pi') {
+    docTitle = "PROFORMA INVOICE";
+    docNoLabel = "P.I. No.";
+    docNo = payload.pi_no || "DRAFT";
+    docDate = payload.pi_date || "-";
+  } else if (docType === 'inv') {
+    docTitle = "TAX INVOICE";
+    docNoLabel = "Invoice No.";
+    docNo = payload.invoice_no || "DRAFT";
+    docDate = payload.invoice_date || "-";
+  } else if (docType === 'challan') {
+    docTitle = "DELIVERY CHALLAN";
+    docNoLabel = "Challan No.";
+    docNo = payload.challan_no || "DRAFT";
+    docDate = payload.challan_date || "-";
+    if (payload.vehicle_no) {
+      extraHeader = `<div style="font-size:12px; color:#334155;"><strong>Vehicle No.:</strong> ${escapeHtml(payload.vehicle_no)}</div>`;
+    }
+  }
+
+  // Party info HTML
+  let partyHTML = '';
+  if (docType === 'po') {
+    partyHTML = `
+      <div style="display:flex; justify-content:space-between; gap:20px; margin-top:14px; font-size:12px; background:#f8fafc; padding:10px 14px; border-radius:6px; border:1px solid #e2e8f0;">
+        <div style="flex:1;">
+          <div style="font-weight:700; color:#0369a1; text-transform:uppercase; margin-bottom:4px; font-size:11px;">Vendor / Supplier</div>
+          <div style="font-size:13px; font-weight:700; color:#0f172a;">${escapeHtml(payload.vendor?.name || '-')}</div>
+          <div style="color:#475569; white-space:pre-line;">${escapeHtml(payload.vendor?.address || '-')}</div>
+          <div style="margin-top:4px;"><strong>GSTIN:</strong> ${escapeHtml(payload.vendor?.gstin || '-')}</div>
+          <div><strong>Contact:</strong> ${escapeHtml(payload.vendor?.contact || '-')}</div>
+        </div>
+        ${payload.site ? `
+        <div style="flex:1; border-left:1px solid #cbd5e1; padding-left:16px;">
+          <div style="font-weight:700; color:#0369a1; text-transform:uppercase; margin-bottom:4px; font-size:11px;">Deliver To / Site</div>
+          <div style="color:#334155; white-space:pre-line; font-weight:600;">${escapeHtml(payload.site)}</div>
+        </div>` : ''}
+      </div>
+    `;
+  } else if (docType === 'pi' || docType === 'inv') {
+    partyHTML = `
+      <div style="margin-top:14px; font-size:12px; background:#f8fafc; padding:10px 14px; border-radius:6px; border:1px solid #e2e8f0;">
+        <div style="font-weight:700; color:#0369a1; text-transform:uppercase; margin-bottom:4px; font-size:11px;">Buyer / Bill To</div>
+        <div style="font-size:13px; font-weight:700; color:#0f172a;">${escapeHtml(payload.buyer?.name || '-')}</div>
+        <div style="color:#475569; white-space:pre-line;">${escapeHtml(payload.buyer?.address || '-')}</div>
+        ${payload.buyer?.gstin ? `<div style="margin-top:4px;"><strong>GSTIN:</strong> ${escapeHtml(payload.buyer.gstin)}</div>` : ''}
+        ${payload.buyer?.attn ? `<div><strong>Kind Attn:</strong> ${escapeHtml(payload.buyer.attn)}</div>` : ''}
+      </div>
+    `;
+  } else if (docType === 'challan') {
+    partyHTML = `
+      <div style="margin-top:14px; font-size:12px; background:#f8fafc; padding:10px 14px; border-radius:6px; border:1px solid #e2e8f0;">
+        <div style="font-weight:700; color:#0369a1; text-transform:uppercase; margin-bottom:4px; font-size:11px;">Receiver / Delivery Site</div>
+        <div style="font-size:13px; font-weight:700; color:#0f172a;">${escapeHtml(payload.receiver_name || '-')}</div>
+        <div style="color:#475569; white-space:pre-line;">${escapeHtml(payload.site_address || '-')}</div>
+      </div>
+    `;
+  }
+
+  // Subject line
+  const subjectHTML = payload.subject ? `
+    <div style="margin:12px 0 6px 0; font-size:12px; color:#1e293b;">
+      <span style="font-weight:700; color:#0f172a;">SUBJECT:</span> <strong>${escapeHtml(payload.subject)}</strong>
+    </div>
+  ` : '';
+
+  // Material info for challan
+  const materialHTML = (docType === 'challan' && payload.material_info) ? `
+    <div style="margin:8px 0; font-size:11.5px; background:#fffbeb; border:1px solid #fef3c7; padding:8px 12px; border-radius:4px; color:#92400e;">
+      <strong>Material Information:</strong><br><span style="white-space:pre-line;">${escapeHtml(payload.material_info)}</span>
+    </div>
+  ` : '';
+
+  // Items table
+  let tableHTML = '';
+  if (docType === 'challan') {
+    tableHTML = `
+      <table style="width:100%; border-collapse:collapse; margin:12px 0; font-size:11px; text-align:left;">
+        <thead>
+          <tr style="background:#d6e9f8; color:#0f172a;">
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:40px;">S.NO.</th>
+            <th style="border:1px solid #94a3b8; padding:6px;">PARTICULARS</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:75px;">LENGTH (mm)</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:75px;">BREADTH (mm)</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:75px;">HEIGHT (mm)</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">QTY</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">UNIT</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(payload.items || []).map((it, idx) => `
+            <tr>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${idx + 1}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; font-weight:600;">${escapeHtml(it.particulars || '')}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.length || '')}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.breadth || '')}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.height || '')}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center; font-weight:600;">${escapeHtml(it.qty || '')}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.unit || 'nos')}</td>
+            </tr>
+          `).join('')}
+          <tr style="background:#f1f5f9; font-weight:700;">
+            <td colspan="5" style="border:1px solid #94a3b8; padding:7px; text-align:right;">TOTAL QUANTITY:</td>
+            <td style="border:1px solid #94a3b8; padding:7px; text-align:center; color:#0f172a;">${escapeHtml(payload.total_qty || '0')}</td>
+            <td style="border:1px solid #94a3b8; padding:7px; text-align:center;">${escapeHtml(payload.unit_label || 'PCS / SET')}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  } else if (docType === 'po') {
+    let rowsHTML = '';
+    if (payload.sections && payload.sections.length > 0) {
+      payload.sections.forEach((sec, sIdx) => {
+        if (sec.name) {
+          rowsHTML += `
+            <tr style="background:#f1f5f9; font-weight:700;">
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${sIdx + 1}</td>
+              <td colspan="6" style="border:1px solid #cbd5e1; padding:5px; color:#0369a1;">${escapeHtml(sec.name)}</td>
+            </tr>
+          `;
+        }
+        (sec.items || []).forEach((it, iIdx) => {
+          rowsHTML += `
+            <tr>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${sec.name ? String.fromCharCode(97 + iIdx) : (iIdx + 1)}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.hsn || '9403')}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
+              <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
+            </tr>
+          `;
+        });
+        if (sec.subtotal) {
+          rowsHTML += `
+            <tr style="background:#fafafa; font-weight:600; font-size:10.5px;">
+              <td colspan="6" style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right;">Section Subtotal:</td>
+              <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:700;">₹${fmt(sec.subtotal)}</td>
+            </tr>
+          `;
+        }
+      });
+    } else {
+      (payload.items || []).forEach((it, idx) => {
+        rowsHTML += `
+          <tr>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${idx + 1}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.hsn || '9403')}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
+          </tr>
+        `;
+      });
+    }
+    tableHTML = `
+      <table style="width:100%; border-collapse:collapse; margin:12px 0; font-size:11px; text-align:left;">
+        <thead>
+          <tr style="background:#d6e9f8; color:#0f172a;">
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:45px;">Sr. No.</th>
+            <th style="border:1px solid #94a3b8; padding:6px;">Particulars</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">HSN/SAC</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:50px;">UOM</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">Qty</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:75px;">Rate (₹)</th>
+            <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:90px;">Amount (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHTML}
+          <tr>
+            <td colspan="6" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; font-weight:600;">Sub-Total:</td>
+            <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; font-weight:600;">₹${fmt(payload.sub_total)}</td>
+          </tr>
+          <tr>
+            <td colspan="6" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">Add: GST @ ${payload.gst_pct}%:</td>
+            <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">₹${fmt(payload.gst_amt)}</td>
+          </tr>
+          <tr style="background:#f8fafc; font-size:12px;">
+            <td colspan="6" style="border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;">GRAND TOTAL:</td>
+            <td style="border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;">₹${fmt(payload.grand_total)}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  } else {
+    // PI or Invoice
+    let sectionsHTML = '';
+    (payload.sections || []).forEach((sec, sIdx) => {
+      const hasRooms = !!sec.has_rooms;
+      const colCount = hasRooms ? 7 : 6;
+      let rows = '';
+
+      if (sec.name) {
+        rows += `
+          <tr style="background:#f1f5f9; font-weight:700;">
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${sIdx + 1}</td>
+            <td colspan="${colCount - 1}" style="border:1px solid #cbd5e1; padding:5px; color:#0369a1;">${escapeHtml(sec.name)}</td>
+          </tr>
+        `;
+      }
+
+      (sec.items || []).forEach((it, iIdx) => {
+        const itemNumber = sec.name ? String.fromCharCode(97 + iIdx) : (iIdx + 1);
+        rows += `
+          <tr>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${itemNumber}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
+            ${hasRooms ? `<td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.rooms ?? '-'}</td>` : ''}
+            <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
+          </tr>
+        `;
+      });
+
+      if (sec.name && sec.items && sec.items.length > 0) {
+        const totalRatePerRoom = sec.items.reduce((sum, it) => sum + (Number(it.rate) || 0), 0);
+        rows += `
+          <tr style="background:#f8fafc; font-size:10.5px; font-weight:600;">
+            <td colspan="4" style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right;">Total Rate per Room:</td>
+            <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:700;">₹${fmt(totalRatePerRoom)}</td>
+            <td colspan="${hasRooms ? 2 : 1}" style="border:1px solid #cbd5e1;"></td>
+          </tr>
+        `;
+      }
+
+      rows += `
+        <tr style="background:#fafafa; font-weight:700; font-size:11px;">
+          <td colspan="${colCount - 1}" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">Sub-Total:</td>
+          <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; color:#0f172a;">₹${fmt(sec.subtotal)}</td>
+        </tr>
+      `;
+
+      sectionsHTML += `
+        <table style="width:100%; border-collapse:collapse; margin:10px 0; font-size:11px; text-align:left;">
+          <thead>
+            <tr style="background:#d6e9f8; color:#0f172a;">
+              <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:45px;">Sr. No.</th>
+              <th style="border:1px solid #94a3b8; padding:6px;">Particulars</th>
+              <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">UOM</th>
+              <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">Qty/Area</th>
+              <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:75px;">Rate (₹)</th>
+              ${hasRooms ? `<th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">Rooms</th>` : ''}
+              <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:95px;">Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      `;
+    });
+
+    tableHTML = `
+      ${sectionsHTML}
+      <table style="width:100%; border-collapse:collapse; margin-top:8px; font-size:11px;">
+        <tbody>
+          <tr>
+            <td style="padding:5px 8px; text-align:right; font-weight:600; width:75%;">Project Total (before GST):</td>
+            <td style="padding:5px 8px; text-align:right; font-weight:600; border:1px solid #cbd5e1; width:25%;">₹${fmt(payload.project_total)}</td>
+          </tr>
+          <tr>
+            <td style="padding:5px 8px; text-align:right;">Add: GST @ ${payload.gst_pct}%:</td>
+            <td style="padding:5px 8px; text-align:right; border:1px solid #cbd5e1;">₹${fmt(payload.gst_amt)}</td>
+          </tr>
+          ${payload.round_off ? `
+          <tr>
+            <td style="padding:5px 8px; text-align:right;">Round off:</td>
+            <td style="padding:5px 8px; text-align:right; border:1px solid #cbd5e1;">₹${fmt(Math.abs(payload.round_off))}</td>
+          </tr>` : ''}
+          <tr style="background:#f8fafc; font-size:12px;">
+            <td style="padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;">GRAND TOTAL:</td>
+            <td style="padding:7px 8px; text-align:right; font-weight:800; color:#0f172a; border:1px solid #94a3b8;">₹${fmt(payload.grand_total)}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }
+
+  // Words note
+  const wordsHTML = payload.amount_in_words ? `
+    <div style="margin:10px 0; font-size:11.5px; font-style:italic; color:#334155;">
+      <strong>Amount in words:</strong> ${escapeHtml(payload.amount_in_words)}
+    </div>
+  ` : '';
+
+  // Bank details for PI / INV
+  let bankHTML = '';
+  if ((docType === 'pi' || docType === 'inv') && payload.bank) {
+    bankHTML = `
+      <div style="margin-top:14px; font-size:11px; background:#f8fafc; padding:8px 12px; border:1px solid #e2e8f0; border-radius:4px; max-width:440px;">
+        <div style="font-weight:700; color:#0369a1; text-transform:uppercase; margin-bottom:3px;">Our Bank Account Details</div>
+        <div><strong>Name:</strong> STUDIO5 INTERIORS PRIVATE LIMITED</div>
+        <div><strong>Bank:</strong> ${escapeHtml(payload.bank.name || '-')}</div>
+        <div><strong>Account No.:</strong> ${escapeHtml(payload.bank.account || '-')}</div>
+        <div><strong>IFSC Code:</strong> ${escapeHtml(payload.bank.ifsc || '-')}</div>
+        <div><strong>Branch:</strong> ${escapeHtml(payload.bank.branch || '-')}</div>
+      </div>
+    `;
+  }
+
+  // Footer / Signatures
+  let footerHTML = '';
+  if (docType === 'challan') {
+    footerHTML = `
+      <div style="margin-top:20px;">
+        <div style="font-size:12px; font-weight:700; margin-bottom:12px; color:#0f172a;">FOR ${escapeHtml(addr.name)}</div>
+        <table style="width:100%; border-collapse:collapse; font-size:11px;">
+          <tr>
+            <td style="width:33%; border:1px solid #cbd5e1; padding:8px; vertical-align:top;">
+              <div style="font-weight:700; margin-bottom:40px;">CHECKED BY</div>
+              <div style="color:#64748b; font-size:10px;">Name / Signature: __________________</div>
+            </td>
+            <td style="width:33%; border:1px solid #cbd5e1; padding:8px; vertical-align:top;">
+              <div style="font-weight:700; margin-bottom:40px;">RECEIVED BY</div>
+              <div style="color:#64748b; font-size:10px;">Name / Signature: __________________</div>
+            </td>
+            <td style="width:34%; border:1px solid #cbd5e1; padding:8px; text-align:center; vertical-align:top;">
+              <div style="font-weight:700; margin-bottom:6px;">AUTHORIZED SIGNATORY</div>
+              <img src="/assets/stamp.png" style="height:65px; object-fit:contain; margin:2px auto;" onerror="this.style.display='none'">
+              <div style="color:#64748b; font-size:10px; margin-top:4px;">(Studio5 Interiors Pvt Ltd)</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+  } else {
+    footerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:16px; flex-wrap:wrap; gap:16px;">
+        <div style="flex:1; min-width:260px;">
+          ${bankHTML}
+          ${payload.payment_terms ? `
+            <div style="margin-top:8px; font-size:10.5px; color:#475569;">
+              <strong>Payment Terms:</strong> ${escapeHtml(payload.payment_terms)}
+            </div>
+          ` : ''}
+          ${(docType === 'pi' || docType === 'inv') ? `
+            <div style="margin-top:6px; font-size:10px; color:#64748b;">
+              <strong>Declaration:</strong> We declare that this invoice shows the actual price of the goods described and that all particulars are true &amp; correct.
+            </div>
+          ` : ''}
+        </div>
+        <div style="text-align:right; min-width:200px;">
+          <div style="font-size:11.5px; font-weight:700; color:#0f172a;">For ${escapeHtml(addr.name)}</div>
+          <div style="margin:4px 0;">
+            <img src="/assets/stamp.png" style="height:70px; object-fit:contain; display:inline-block;" onerror="this.style.display='none'">
+          </div>
+          <div style="font-size:11px; color:#475569;">(Authorized Signatory)</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // PO Terms & Conditions at bottom
+  let poTermsHTML = '';
+  if (docType === 'po') {
+    poTermsHTML = `
+      <div style="margin-top:24px; padding-top:12px; border-top:1.5px solid #cbd5e1; font-size:9.5px; color:#475569; line-height:1.45;">
+        <div style="font-size:11px; font-weight:800; color:#0f172a; text-transform:uppercase; margin-bottom:6px;">Terms &amp; Conditions</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div>
+            <strong>1. Payment Terms:</strong> Released strictly as per schedule mentioned in PO. Paid only against valid GST tax invoice with correct HSN/GSTIN. Advance treated as supply advance.<br>
+            <strong>2. Quality:</strong> All material must strictly conform to specifications, brand, grade &amp; thickness. ISI/BIS marking required. Rejected goods replaced at supplier's cost.<br>
+            <strong>3. Quantity:</strong> Exact quantity to be delivered. Short-supplied quantity value deducted from invoice. Excess supply subject to return at supplier's cost.
+          </div>
+          <div>
+            <strong>4. Delivery Time:</strong> Time is essence of contract. Anticipated delay must be intimated 3 days prior. Delay penalty @ 0.5%/week applies.<br>
+            <strong>5. Freight &amp; Transit:</strong> Deliveries FOR Site/Warehouse. Adequate packaging for safe transit. Damage in transit replaced within 48 hours.<br>
+            <strong>6. General:</strong> Governed by laws of India, jurisdiction courts at Gurugram, Haryana. Cancellation right reserved prior to dispatch.
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="font-family:'Segoe UI', Arial, sans-serif; color:#1e293b; background:#fff; padding:16px; border:1px solid #e2e8f0; border-radius:4px; max-width:800px; margin:0 auto;">
+      <!-- Header -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; border-bottom:2px solid #0369a1; padding-bottom:12px;">
+        <div style="flex:1;">
+          <img src="/assets/logo.png" style="height:55px; object-fit:contain; margin-bottom:6px; display:block;" onerror="this.style.display='none'">
+          <div style="font-size:15px; font-weight:800; color:#0f172a; letter-spacing:0.3px;">${escapeHtml(addr.name)}</div>
+          <div style="font-size:10.5px; color:#475569; line-height:1.4;">
+            ${escapeHtml(addr.line1)}<br>
+            ${escapeHtml(addr.line2)}<br>
+            <strong>GSTIN:</strong> ${escapeHtml(addr.gstin)} &nbsp;|&nbsp; <strong>MSME:</strong> ${escapeHtml(addr.msme)}<br>
+            Email: ${escapeHtml(addr.email)} &nbsp;|&nbsp; Mob: ${escapeHtml(addr.mobile)}
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:18px; font-weight:900; color:#0369a1; letter-spacing:0.5px; text-transform:uppercase;">${docTitle}</div>
+          <div style="font-size:12px; margin-top:6px; color:#0f172a;"><strong>${docNoLabel}:</strong> ${escapeHtml(docNo)}</div>
+          <div style="font-size:12px; color:#475569;"><strong>Date:</strong> ${escapeHtml(docDate)}</div>
+          ${extraHeader}
+        </div>
+      </div>
+
+      <!-- Party details -->
+      ${partyHTML}
+
+      <!-- Subject & Material -->
+      ${subjectHTML}
+      ${materialHTML}
+
+      <!-- Items Table -->
+      ${tableHTML}
+
+      <!-- Words note -->
+      ${wordsHTML}
+
+      <!-- Signatures & Banking -->
+      ${footerHTML}
+
+      <!-- PO Terms -->
+      ${poTermsHTML}
+    </div>
+  `;
+}
+
+async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusElId, docType, fieldId) {
+  const statusEl = document.getElementById(statusElId);
+  if (!backendUrl) {
+    if (window.location.protocol.startsWith('http')) {
+      backendUrl = window.location.origin;
+    }
+  }
+
+  statusEl.textContent = 'Allocating sequence number...';
+  let allocatedDocNo = null;
+
+  if (backendUrl) {
+    try {
+      const res = await fetch(backendUrl + endpoint + '?format=json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.docNumber) {
+          allocatedDocNo = data.docNumber;
+          if (docType === 'po') payload.po_no = allocatedDocNo;
+          else if (docType === 'pi') payload.pi_no = allocatedDocNo;
+          else if (docType === 'inv') payload.invoice_no = allocatedDocNo;
+          else if (docType === 'challan') payload.challan_no = allocatedDocNo;
+
+          if (fieldId) {
+            document.getElementById(fieldId).value = '';
+            autofillNumber(fieldId, docType === 'inv' ? 'invoice' : docType, payload.issuing_address_key);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Backend sequence allocation error:', e);
+    }
+  }
+
+  const currentDocNo = allocatedDocNo || payload.po_no || payload.pi_no || payload.invoice_no || payload.challan_no || 'DRAFT';
+  statusEl.textContent = 'Rendering PDF...';
+
+  // Create temporary container for html2pdf
+  const printWrapper = document.createElement('div');
+  printWrapper.style.position = 'fixed';
+  printWrapper.style.left = '-9999px';
+  printWrapper.style.top = '0';
+  printWrapper.style.width = '800px';
+  printWrapper.innerHTML = buildDocumentPrintHTML(docType, payload);
+  document.body.appendChild(printWrapper);
+
+  const cleanFilename = `${filenamePrefix}_${currentDocNo.replace(/[\\/]/g, '-')}.pdf`;
+  const opt = {
+    margin: [8, 8, 8, 8],
+    filename: cleanFilename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    await html2pdf().set(opt).from(printWrapper).save();
+    statusEl.textContent = `✓ Generated ${currentDocNo} — PDF downloaded!`;
+    if (typeof loadRecentDocuments === 'function') {
+      setTimeout(loadRecentDocuments, 1000);
+    }
+  } catch (err) {
+    console.error('PDF generation error:', err);
+    statusEl.textContent = 'PDF generation error: ' + err.message;
+  } finally {
+    if (printWrapper.parentNode) {
+      document.body.removeChild(printWrapper);
+    }
+  }
+}
+
+function showDocumentPreview(docType, payload) {
+  currentPreviewDoc = { docType, payload };
+  const docNo = payload.po_no || payload.pi_no || payload.invoice_no || payload.challan_no || 'DRAFT';
+  const titleEl = document.getElementById('doc-preview-title');
+  if (titleEl) {
+    titleEl.textContent = `📄 ${payload.document_type || 'Document'} Preview — ${docNo}`;
+  }
+  const container = document.getElementById('doc-preview-container');
+  if (container) {
+    container.innerHTML = buildDocumentPrintHTML(docType, payload);
+  }
+  const modal = document.getElementById('doc-preview-modal');
+  if (modal) {
+    modal.classList.add('active');
+  }
+}
+
+function closeDocPreviewModal() {
+  const modal = document.getElementById('doc-preview-modal');
+  if (modal) {
+    modal.classList.remove('active');
+  }
+}
+
+async function downloadCurrentPreviewPDF() {
+  if (!currentPreviewDoc || !currentPreviewDoc.payload) return;
+  const { docType, payload } = currentPreviewDoc;
+  const container = document.getElementById('doc-preview-container');
+  if (!container) return;
+
+  const docNo = payload.po_no || payload.pi_no || payload.invoice_no || payload.challan_no || 'doc';
+  const prefix = (payload.document_type || 'Document').replace(/\s+/g, '_');
+  const filename = `${prefix}_${docNo.replace(/[\\/]/g, '-')}.pdf`;
+
+  const opt = {
+    margin: [8, 8, 8, 8],
+    filename: filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    await html2pdf().set(opt).from(container).save();
+  } catch (e) {
+    alert('Could not download PDF: ' + e.message);
+  }
+}
+
+function printDocPreview() {
+  const container = document.getElementById('doc-preview-container');
+  if (!container) return;
+  const printWin = window.open('', '_blank');
+  printWin.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Print Document</title>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; color: #1e293b; }
+          @page { size: A4; margin: 10mm; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { border: 1px solid #cbd5e1; padding: 5px 8px; }
+          th { background: #d6e9f8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        </style>
+      </head>
+      <body>
+        ${container.innerHTML}
+      </body>
+    </html>
+  `);
+  printWin.document.close();
+  printWin.focus();
+  setTimeout(() => {
+    printWin.print();
+    printWin.close();
+  }, 400);
+}
+
+function shareDocOnWhatsApp() {
+  if (!currentPreviewDoc || !currentPreviewDoc.payload) return;
+  const p = currentPreviewDoc.payload;
+  const docType = p.document_type || 'Document';
+  const docNo = p.po_no || p.pi_no || p.invoice_no || p.challan_no || '-';
+  const date = p.po_date || p.pi_date || p.invoice_date || p.challan_date || '-';
+  const partyName = p.vendor?.name || p.buyer?.name || p.receiver_name || '-';
+  const total = p.grand_total ? `₹${p.grand_total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : (p.total_qty ? `${p.total_qty} ${p.unit_label || 'PCS'}` : '-');
+
+  const text = `*STUDIO5 INTERIORS PVT LTD*\n*${docType.toUpperCase()}*: ${docNo}\n*Date*: ${date}\n*Party*: ${partyName}\n*Total*: ${total}\n\nGenerated via Studio5 Document Portal.`;
+
+  if (navigator.share) {
+    navigator.share({
+      title: `${docType} - ${docNo}`,
+      text: text
+    }).catch(() => {
+      window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(text), '_blank');
+    });
+  } else {
+    window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(text), '_blank');
+  }
+}
+
+function previewDocument(type) {
+  if (type === 'po') generatePO('preview');
+  else if (type === 'pi') generatePI('preview');
+  else if (type === 'inv') generateINV('preview');
+  else if (type === 'challan') generateChallan('preview');
+}
+
+function getPOPayload() {
   const addrKey = document.getElementById('gen-address').value;
   const addr = addresses[addrKey];
   const sections = [];
@@ -1882,12 +2531,7 @@ async function generatePO() {
     }
   });
 
-  if (allItems.length === 0) {
-    document.getElementById('gen-status').textContent = 'Add at least one line item first.';
-    return;
-  }
-
-  const payload = {
+  return {
     document_type: "Purchase Order",
     po_no: document.getElementById('gen-pono').value,
     po_date: document.getElementById('gen-podate').value,
@@ -1903,16 +2547,32 @@ async function generatePO() {
     subject: document.getElementById('gen-subject').value,
     sections: sections,
     items: allItems,
-    sub_total: parseFloat(document.getElementById('sub-total').textContent),
-    gst_pct: parseFloat(document.getElementById('gst-pct').value),
-    gst_amt: parseFloat(document.getElementById('gst-amt').textContent),
-    grand_total: parseFloat(document.getElementById('grand-total').textContent.replace(/[^0-9.]/g,'')),
-    amount_in_words: document.getElementById('words-preview').textContent.replace('Amount in words: ', '')
+    sub_total: parseFloat(document.getElementById('sub-total').textContent) || 0,
+    gst_pct: parseFloat(document.getElementById('gst-pct').value) || 0,
+    gst_amt: parseFloat(document.getElementById('gst-amt').textContent) || 0,
+    grand_total: parseFloat(document.getElementById('grand-total').textContent.replace(/[^0-9.]/g,'')) || 0,
+    amount_in_words: (document.getElementById('words-preview').textContent || '').replace('Amount in words: ', '')
   };
+}
+
+async function generatePO(format = 'docx') {
+  const payload = getPOPayload();
+  if (!payload.items || payload.items.length === 0) {
+    document.getElementById('gen-status').textContent = 'Add at least one line item first.';
+    return;
+  }
+  if (format === 'preview') {
+    showDocumentPreview('po', payload);
+    return;
+  }
+  if (format === 'pdf') {
+    await generateDocumentAsPDF('/generate/purchase-order', payload, 'Purchase_Order', 'gen-status', 'po', 'gen-pono');
+    return;
+  }
   const result = await generateViaBackend('/generate/purchase-order', payload, 'Purchase_Order', 'gen-status');
   if (result.ok) {
     document.getElementById('gen-pono').value = '';
-    autofillNumber('gen-pono', 'po', addrKey);
+    autofillNumber('gen-pono', 'po', payload.issuing_address_key);
   }
 }
 
@@ -2066,7 +2726,7 @@ function recalcPI() {
   document.getElementById('pi-words-preview').textContent = 'Amount in words: ' + numberToWordsIndian(grand) + ' Rupees';
 }
 
-async function generatePI() {
+function getPIPayload() {
   const addrKey = document.getElementById('pi-address').value;
   const addr = addresses[addrKey];
   const sections = [];
@@ -2085,19 +2745,16 @@ async function generatePI() {
       items.push({ particulars, uom, qty, rate, rooms, amount });
     });
     if (name || items.length) {
-      sections.push({ name, has_rooms: hasRooms, items, subtotal: parseFloat(div.querySelector('.pi-sec-subtotal').textContent) });
+      sections.push({ name, has_rooms: hasRooms, items, subtotal: parseFloat(div.querySelector('.pi-sec-subtotal').textContent) || 0 });
     }
   });
-  if (sections.length === 0) {
-    document.getElementById('pi-gen-status').textContent = 'Add at least one section with items first.';
-    return;
-  }
+
   const bankKey = document.getElementById('pi-bank').value;
   const banks = {
     hdfc: { name: "HDFC BANK LIMITED", account: "50200120135932", ifsc: "HDFC0003676", branch: "SPENDOUR TRADE TOWER, GOLF COURSE EXTN ROAD, SECTOR - 65, GURGAON" },
     idfc: { name: "IDFC FIRST BANK LIMITED", account: "10103784405", ifsc: "IDFB0020134", branch: "DWARKA SECTOR 12 A, NEW DELHI-110078" }
   };
-  const payload = {
+  return {
     document_type: "Proforma Invoice",
     pi_no: document.getElementById('pi-no').value,
     pi_date: document.getElementById('pi-date').value,
@@ -2111,18 +2768,34 @@ async function generatePI() {
     },
     subject: document.getElementById('pi-subject').value,
     sections: sections,
-    project_total: parseFloat(document.getElementById('pi-project-total').textContent),
-    gst_pct: parseFloat(document.getElementById('pi-gst-pct').value),
-    gst_amt: parseFloat(document.getElementById('pi-gst-amt').textContent),
-    grand_total: parseFloat(document.getElementById('pi-grand-total').textContent.replace(/[^0-9.]/g,'')),
-    amount_in_words: document.getElementById('pi-words-preview').textContent.replace('Amount in words: ', ''),
+    project_total: parseFloat(document.getElementById('pi-project-total').textContent) || 0,
+    gst_pct: parseFloat(document.getElementById('pi-gst-pct').value) || 0,
+    gst_amt: parseFloat(document.getElementById('pi-gst-amt').textContent) || 0,
+    grand_total: parseFloat(document.getElementById('pi-grand-total').textContent.replace(/[^0-9.]/g,'')) || 0,
+    amount_in_words: (document.getElementById('pi-words-preview').textContent || '').replace('Amount in words: ', ''),
     bank: banks[bankKey],
     payment_terms: document.getElementById('pi-payment-terms').value
   };
+}
+
+async function generatePI(format = 'docx') {
+  const payload = getPIPayload();
+  if (!payload.sections || payload.sections.length === 0) {
+    document.getElementById('pi-gen-status').textContent = 'Add at least one section with items first.';
+    return;
+  }
+  if (format === 'preview') {
+    showDocumentPreview('pi', payload);
+    return;
+  }
+  if (format === 'pdf') {
+    await generateDocumentAsPDF('/generate/proforma-invoice', payload, 'Proforma_Invoice', 'pi-gen-status', 'pi', 'pi-no');
+    return;
+  }
   const result = await generateViaBackend('/generate/proforma-invoice', payload, 'Proforma_Invoice', 'pi-gen-status');
   if (result.ok) {
     document.getElementById('pi-no').value = '';
-    autofillNumber('pi-no', 'pi', addrKey);
+    autofillNumber('pi-no', 'pi', payload.issuing_address_key);
   }
 }
 
@@ -2261,7 +2934,7 @@ function recalcINV() {
   document.getElementById('inv-words-preview').textContent = 'Amount in words: ' + numberToWordsIndian(grand) + ' Rupees';
 }
 
-async function generateINV() {
+function getINVPayload() {
   const addrKey = document.getElementById('inv-address').value;
   const addr = addresses[addrKey];
   const sections = [];
@@ -2280,19 +2953,16 @@ async function generateINV() {
       items.push({ particulars, uom, qty, rate, rooms, amount });
     });
     if (name || items.length) {
-      sections.push({ name, has_rooms: hasRooms, items, subtotal: parseFloat(div.querySelector('.inv-sec-subtotal').textContent) });
+      sections.push({ name, has_rooms: hasRooms, items, subtotal: parseFloat(div.querySelector('.inv-sec-subtotal').textContent) || 0 });
     }
   });
-  if (sections.length === 0) {
-    document.getElementById('inv-gen-status').textContent = 'Add at least one section with items first.';
-    return;
-  }
+
   const bankKey = document.getElementById('inv-bank').value;
   const banks = {
     hdfc: { name: "HDFC BANK LIMITED", account: "50200120135932", ifsc: "HDFC0003676", branch: "SPENDOUR TRADE TOWER, GOLF COURSE EXTN ROAD, SECTOR - 65, GURGAON" },
     idfc: { name: "IDFC FIRST BANK LIMITED", account: "10103784405", ifsc: "IDFB0020134", branch: "DWARKA SECTOR 12 A, NEW DELHI-110078" }
   };
-  const payload = {
+  return {
     document_type: "Invoice",
     invoice_no: document.getElementById('inv-no').value,
     invoice_date: document.getElementById('inv-date').value,
@@ -2306,18 +2976,34 @@ async function generateINV() {
     },
     subject: document.getElementById('inv-subject').value,
     sections: sections,
-    project_total: parseFloat(document.getElementById('inv-project-total').textContent),
-    gst_pct: parseFloat(document.getElementById('inv-gst-pct').value),
-    gst_amt: parseFloat(document.getElementById('inv-gst-amt').textContent),
-    grand_total: parseFloat(document.getElementById('inv-grand-total').textContent.replace(/[^0-9.]/g,'')),
-    amount_in_words: document.getElementById('inv-words-preview').textContent.replace('Amount in words: ', ''),
+    project_total: parseFloat(document.getElementById('inv-project-total').textContent) || 0,
+    gst_pct: parseFloat(document.getElementById('inv-gst-pct').value) || 0,
+    gst_amt: parseFloat(document.getElementById('inv-gst-amt').textContent) || 0,
+    grand_total: parseFloat(document.getElementById('inv-grand-total').textContent.replace(/[^0-9.]/g,'')) || 0,
+    amount_in_words: (document.getElementById('inv-words-preview').textContent || '').replace('Amount in words: ', ''),
     bank: banks[bankKey],
     payment_terms: document.getElementById('inv-payment-terms').value
   };
+}
+
+async function generateINV(format = 'docx') {
+  const payload = getINVPayload();
+  if (!payload.sections || payload.sections.length === 0) {
+    document.getElementById('inv-gen-status').textContent = 'Add at least one section with items first.';
+    return;
+  }
+  if (format === 'preview') {
+    showDocumentPreview('inv', payload);
+    return;
+  }
+  if (format === 'pdf') {
+    await generateDocumentAsPDF('/generate/invoice', payload, 'Invoice', 'inv-gen-status', 'inv', 'inv-no');
+    return;
+  }
   const result = await generateViaBackend('/generate/invoice', payload, 'Invoice', 'inv-gen-status');
   if (result.ok) {
     document.getElementById('inv-no').value = '';
-    autofillNumber('inv-no', 'invoice', addrKey);
+    autofillNumber('inv-no', 'invoice', payload.issuing_address_key);
   }
 }
 
@@ -2371,7 +3057,7 @@ function recalcChallan() {
   document.getElementById('challan-total-qty').textContent = total;
 }
 
-async function generateChallan() {
+function getChallanPayload() {
   const addrKey = document.getElementById('challan-address').value;
   const addr = addresses[addrKey];
   const items = [];
@@ -2387,11 +3073,8 @@ async function generateChallan() {
       unit: row.querySelector('.c-unit').value
     });
   });
-  if (items.length === 0) {
-    document.getElementById('challan-gen-status').textContent = 'Add at least one item first.';
-    return;
-  }
-  const payload = {
+
+  return {
     document_type: "Delivery Challan",
     challan_no: document.getElementById('challan-no').value,
     challan_date: document.getElementById('challan-date').value,
@@ -2406,10 +3089,26 @@ async function generateChallan() {
     total_qty: document.getElementById('challan-total-qty').textContent,
     unit_label: document.getElementById('challan-unit-label').value
   };
+}
+
+async function generateChallan(format = 'docx') {
+  const payload = getChallanPayload();
+  if (!payload.items || payload.items.length === 0) {
+    document.getElementById('challan-gen-status').textContent = 'Add at least one item first.';
+    return;
+  }
+  if (format === 'preview') {
+    showDocumentPreview('challan', payload);
+    return;
+  }
+  if (format === 'pdf') {
+    await generateDocumentAsPDF('/generate/challan', payload, 'Delivery_Challan', 'challan-gen-status', 'challan', 'challan-no');
+    return;
+  }
   const result = await generateViaBackend('/generate/challan', payload, 'Delivery_Challan', 'challan-gen-status');
   if (result.ok) {
     document.getElementById('challan-no').value = '';
-    autofillNumber('challan-no', 'challan', addrKey);
+    autofillNumber('challan-no', 'challan', payload.issuing_address_key);
   }
 }
 
@@ -3426,6 +4125,31 @@ addChallanItemRow();
     <div class="modal-footer">
       <button class="btn secondary small" onclick="closeScanModal()">Cancel</button>
       <button class="btn small" id="scan-insert-btn" style="display:none;" onclick="insertScannedData()">✓ Insert into Document</button>
+    </div>
+  </div>
+</div>
+
+<!-- DOCUMENT PREVIEW MODAL -->
+<div class="modal-overlay" id="doc-preview-modal">
+  <div class="modal-box" style="max-width:920px; width:95%; max-height:95vh;">
+    <div class="modal-header">
+      <h3 id="doc-preview-title">📄 Document Preview</h3>
+      <button class="modal-close" onclick="closeDocPreviewModal()">✕</button>
+    </div>
+    <div class="modal-body" style="background:#f1f5f9; padding:16px; overflow-y:auto;">
+      <div id="doc-preview-container" style="background:#fff; max-width:820px; margin:0 auto; padding:28px; box-shadow:0 4px 16px rgba(0,0,0,0.1); border-radius:6px;">
+        <!-- Rendered print document -->
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn" style="background:#25d366; border-color:#25d366;" onclick="shareDocOnWhatsApp()">📱 Share WhatsApp</button>
+        <button type="button" class="btn secondary small" onclick="printDocPreview()">🖨️ Print</button>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn secondary small" onclick="closeDocPreviewModal()">Close</button>
+        <button type="button" class="btn small" style="background:#dc2626; border-color:#dc2626; font-weight:700;" onclick="downloadCurrentPreviewPDF()">📥 Download PDF</button>
+      </div>
     </div>
   </div>
 </div>

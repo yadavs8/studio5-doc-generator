@@ -328,6 +328,9 @@ app.post("/generate/purchase-order", async (req, res) => {
       payload,
     });
     payload.po_no = docNumber;
+    if (req.query.format === "json" || req.headers["x-record-only"] === "true") {
+      return res.json({ success: true, docNumber, payload });
+    }
     const buf = await generatePO(payload, logoBuffer, stampBuffer);
     sendDocx(res, buf, `Purchase_Order_${safeFilenamePart(docNumber)}.docx`, docNumber);
   } catch (e) {
@@ -346,6 +349,9 @@ app.post("/generate/proforma-invoice", async (req, res) => {
       payload,
     });
     payload.pi_no = docNumber;
+    if (req.query.format === "json" || req.headers["x-record-only"] === "true") {
+      return res.json({ success: true, docNumber, payload });
+    }
     const buf = await generatePI(payload, logoBuffer, stampBuffer);
     sendDocx(res, buf, `Proforma_Invoice_${safeFilenamePart(docNumber)}.docx`, docNumber);
   } catch (e) {
@@ -365,6 +371,9 @@ app.post("/generate/invoice", async (req, res) => {
       payload,
     });
     payload.invoice_no = docNumber;
+    if (req.query.format === "json" || req.headers["x-record-only"] === "true") {
+      return res.json({ success: true, docNumber, payload });
+    }
     const buf = await generateInvoice(payload, logoBuffer, stampBuffer);
     sendDocx(res, buf, `Invoice_${safeFilenamePart(docNumber)}.docx`, docNumber);
   } catch (e) {
@@ -383,6 +392,9 @@ app.post("/generate/challan", async (req, res) => {
       payload,
     });
     payload.challan_no = docNumber;
+    if (req.query.format === "json" || req.headers["x-record-only"] === "true") {
+      return res.json({ success: true, docNumber, payload });
+    }
     const buf = await generateChallan(payload, logoBuffer, stampBuffer);
     sendDocx(res, buf, `Delivery_Challan_${safeFilenamePart(docNumber)}.docx`, docNumber);
   } catch (e) {
