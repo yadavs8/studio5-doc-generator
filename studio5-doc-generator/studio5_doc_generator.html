@@ -108,6 +108,14 @@
   }
   .row-recording { background-color: #fff1f2 !important; transition: background-color 0.2s; }
   .row-processing { background-color: #fefce8 !important; opacity: 0.85; transition: background-color 0.2s; }
+  .mic-party-btn.recording {
+    background: #fee2e2 !important; border-color: #ef4444 !important; color: #b91c1c !important;
+    animation: pulse-mic 1.2s infinite ease-in-out;
+  }
+  .mic-party-btn.processing {
+    background: #fef3c7 !important; border-color: #f59e0b !important; color: #92400e !important;
+    cursor: wait;
+  }
   .lib-actions { display: flex; gap: 8px; margin-top: 10px; }
   .terms-preview { max-height: 160px; overflow-y: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: #fafafa; }
   .terms-preview p { margin: 4px 0; }
@@ -247,15 +255,12 @@
     </div>
 
     <div class="card">
-      <h2>Saved Buyers (for Buyer's Details on Proforma Invoice / Invoice)</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h2 style="margin:0;">Saved Client &amp; Site Addresses (PI, TI, Invoice, Challan &amp; PO)</h2>
+      </div>
       <div class="addr-grid" id="buyer-grid"></div>
-      <p style="font-size:12px; color:var(--muted); margin-top:10px;">New buyers get added automatically when you use "+ Save this buyer to library" on the Generate tabs.</p>
-    </div>
-
-    <div class="card">
-      <h2>Saved Delivery Sites (for Delivery Challan)</h2>
-      <div class="addr-grid" id="site-grid"></div>
-      <p style="font-size:12px; color:var(--muted); margin-top:10px;">New sites get added automatically when you use "+ Save this site to library" on the Generate Challan tab.</p>
+      <div class="addr-grid" id="site-grid" style="display:none;"></div>
+      <p style="font-size:12px; color:var(--muted); margin-top:10px;">Unified address book. All clients and site addresses saved or voice-dictated here are available across Proforma Invoices, Tax Invoices, Delivery Challans, and PO delivery sites.</p>
     </div>
 
     <div class="card">
@@ -375,8 +380,11 @@
     </div>
 
     <div class="card">
-      <h2>2. Vendor / Supplier Details</h2>
-      <div class="row2">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h2 style="margin:0;">2. Vendor / Supplier Details</h2>
+        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-po-vendor" onclick="togglePartyVoiceDictation('po-vendor')" style="font-weight:600;">🎙️ Voice Fill Vendor</button>
+      </div>
+      <div class="row2" style="margin-top:8px;">
         <div><label>Vendor Name</label><input id="gen-vendor-name"></div>
         <div><label>Vendor GSTIN</label><input id="gen-vendor-gstin"></div>
       </div>
@@ -393,7 +401,12 @@
     </div>
 
     <div class="card">
-      <h2>3. Deliver To (Site Address)</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h2 style="margin:0;">3. Deliver To (Site Address)</h2>
+        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-po-site" onclick="togglePartyVoiceDictation('po-site')" style="font-weight:600;">🎙️ Voice Fill Site</button>
+      </div>
+      <label style="margin-top:8px;">Select a saved client / project site</label>
+      <select id="gen-site-select" onchange="applyPartySelection('po-site')"></select>
       <label>Site / Project</label>
       <textarea id="gen-site"></textarea>
     </div>
@@ -446,9 +459,12 @@
     </div>
 
     <div class="card">
-      <h2>2. Buyer's Details</h2>
-      <label>Select a saved buyer</label>
-      <select id="pi-buyer-select" onchange="applyBuyerSelection('pi')"></select>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h2 style="margin:0;">2. Buyer's Details</h2>
+        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-pi-buyer" onclick="togglePartyVoiceDictation('pi-buyer')" style="font-weight:600;">🎙️ Voice Fill Details</button>
+      </div>
+      <label style="margin-top:8px;">Select a saved client / buyer / site</label>
+      <select id="pi-buyer-select" onchange="applyPartySelection('pi')"></select>
       <div class="row2">
         <div><label>Buyer Name</label><input id="pi-buyer-name"></div>
         <div><label>Buyer GSTIN (optional)</label><input id="pi-buyer-gstin"></div>
@@ -458,7 +474,7 @@
       <label>Kind Attention (optional)</label>
       <input id="pi-buyer-attn">
       <div class="lib-actions">
-        <button class="btn secondary small" onclick="saveCurrentAsBuyer('pi')">+ Save this buyer to library</button>
+        <button class="btn secondary small" onclick="saveCurrentAsParty('pi')">+ Save this buyer to library</button>
       </div>
     </div>
 
@@ -520,9 +536,12 @@
     </div>
 
     <div class="card">
-      <h2>2. Buyer's Details</h2>
-      <label>Select a saved buyer</label>
-      <select id="inv-buyer-select" onchange="applyBuyerSelection('inv')"></select>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h2 style="margin:0;">2. Buyer's Details</h2>
+        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-inv-buyer" onclick="togglePartyVoiceDictation('inv-buyer')" style="font-weight:600;">🎙️ Voice Fill Details</button>
+      </div>
+      <label style="margin-top:8px;">Select a saved client / buyer / site</label>
+      <select id="inv-buyer-select" onchange="applyPartySelection('inv')"></select>
       <div class="row2">
         <div><label>Buyer Name</label><input id="inv-buyer-name"></div>
         <div><label>Buyer GSTIN (optional)</label><input id="inv-buyer-gstin"></div>
@@ -532,7 +551,7 @@
       <label>Kind Attention (optional)</label>
       <input id="inv-buyer-attn">
       <div class="lib-actions">
-        <button class="btn secondary small" onclick="saveCurrentAsBuyer('inv')">+ Save this buyer to library</button>
+        <button class="btn secondary small" onclick="saveCurrentAsParty('inv')">+ Save this buyer to library</button>
       </div>
     </div>
 
@@ -591,15 +610,18 @@
     </div>
 
     <div class="card">
-      <h2>2. Receiver Details</h2>
-      <label>Select a saved delivery site</label>
-      <select id="challan-site-select" onchange="applySiteSelection('challan')"></select>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h2 style="margin:0;">2. Receiver Details</h2>
+        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-challan-site" onclick="togglePartyVoiceDictation('challan-site')" style="font-weight:600;">🎙️ Voice Fill Details</button>
+      </div>
+      <label style="margin-top:8px;">Select a saved client or delivery site</label>
+      <select id="challan-site-select" onchange="applyPartySelection('challan')"></select>
       <label>Receiver Name</label>
       <input id="challan-receiver-name">
       <label>Site Address</label>
       <textarea id="challan-site-address"></textarea>
       <div class="lib-actions">
-        <button class="btn secondary small" onclick="saveCurrentAsSite('challan')">+ Save this site to library</button>
+        <button class="btn secondary small" onclick="saveCurrentAsParty('challan')">+ Save this party to library</button>
       </div>
     </div>
 
@@ -719,7 +741,7 @@ const DEFAULT_ADDRESSES = {
   }
 };
 
-const DEFAULT_BUYERS = {
+const DEFAULT_PARTIES = {
   "lemon_tree_dehradun": {
     label: "Lemon Tree Hotel, Dehradun",
     name: "LEMON TREE HOTEL,",
@@ -740,16 +762,18 @@ const DEFAULT_BUYERS = {
     address: "Corporate Office: 5th Floor, Time Square Building\nB- Block, Sushant Lok, Phase-1, Gurgaon-122009",
     gstin: "06AAACC3164A1ZD",
     attn: ""
+  },
+  "the_melia": {
+    label: "The Melia (DSS Buildtech, Sohna)",
+    name: "DSS BUILDTECH PRIVATE LIMITED",
+    address: "THE MELIA, Vill- Mohammadpur Gurjar, Sector-35, Sohna, Gurugram, Haryana",
+    gstin: "",
+    attn: ""
   }
 };
 
-const DEFAULT_SITES = {
-  "the_melia": {
-    label: "The Melia (DSS Buildtech)",
-    receiver_name: "DSS BUILDTECH PRIVATE LIMITED",
-    site_address: "THE MELIA, Vill- Mohammadpur Gurjar, Sector-35,"
-  }
-};
+const DEFAULT_BUYERS = DEFAULT_PARTIES;
+const DEFAULT_SITES = DEFAULT_PARTIES;
 
 // Document numbering (PO/PI/Invoice/Challan) is now allocated and recorded
 // server-side — see autofillNumber()/fetchNextNumberPreview() and the
@@ -1050,154 +1074,337 @@ async function saveNewAddress() {
   }
 }
 
+let parties = {};
+let buyers = parties;
+let sites = parties;
+
 async function loadBuyers() {
-  try {
-    const res = await localDB.get('studio5_buyers');
-    buyers = res && res.value ? JSON.parse(res.value) : null;
-  } catch (e) { buyers = null; }
-  if (!buyers) {
-    buyers = DEFAULT_BUYERS;
-    await localDB.set('studio5_buyers', JSON.stringify(buyers));
-  } else {
-    let changed = false;
-    Object.keys(DEFAULT_BUYERS).forEach(key => {
-      if (!buyers[key]) { buyers[key] = DEFAULT_BUYERS[key]; changed = true; }
-    });
-    if (changed) await localDB.set('studio5_buyers', JSON.stringify(buyers));
-  }
-  renderBuyers();
-  populateBuyerDropdowns();
-}
-
-function renderBuyers() {
-  const grid = document.getElementById('buyer-grid');
-  if (!grid) return;
-  grid.innerHTML = '';
-  Object.entries(buyers).forEach(([key, b]) => {
-    const box = document.createElement('div');
-    box.className = 'addr-box';
-    box.innerHTML = `<div class="label">${b.label}</div>
-      <div>${b.name}</div>
-      <div>${b.address}</div>
-      ${b.gstin ? `<div>GSTIN: ${b.gstin}</div>` : ''}
-      ${b.attn ? `<div>Kind Attn. ${b.attn}</div>` : ''}`;
-    grid.appendChild(box);
-  });
-}
-
-function populateBuyerDropdowns() {
-  ['pi-buyer-select', 'inv-buyer-select'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    sel.innerHTML = '<option value="">-- Type manually / new buyer --</option>';
-    Object.entries(buyers).forEach(([key, b]) => {
-      const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = b.label;
-      sel.appendChild(opt);
-    });
-  });
-}
-
-function applyBuyerSelection(prefix) {
-  const sel = document.getElementById(prefix + '-buyer-select');
-  const key = sel.value;
-  if (!key) return;
-  const b = buyers[key];
-  document.getElementById(prefix + '-buyer-name').value = b.name;
-  document.getElementById(prefix + '-buyer-address').value = b.address;
-  document.getElementById(prefix + '-buyer-gstin').value = b.gstin || '';
-  document.getElementById(prefix + '-buyer-attn').value = b.attn || '';
-}
-
-async function saveCurrentAsBuyer(prefix) {
-  const name = document.getElementById(prefix + '-buyer-name').value.trim();
-  const address = document.getElementById(prefix + '-buyer-address').value.trim();
-  if (!name || !address) { alert('Fill in buyer name and address first.'); return; }
-  const label = prompt('Save this buyer as (label):', name.replace(/,$/, ''));
-  if (!label) return;
-  const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
-  buyers[key] = {
-    label,
-    name,
-    address,
-    gstin: document.getElementById(prefix + '-buyer-gstin').value,
-    attn: document.getElementById(prefix + '-buyer-attn').value
-  };
-  await localDB.set('studio5_buyers', JSON.stringify(buyers));
-  renderBuyers();
-  populateBuyerDropdowns();
-  alert('Saved to buyer library.');
+  await loadParties();
 }
 
 async function loadSites() {
-  try {
-    const res = await localDB.get('studio5_sites');
-    sites = res && res.value ? JSON.parse(res.value) : null;
-  } catch (e) { sites = null; }
-  if (!sites) {
-    sites = DEFAULT_SITES;
-    await localDB.set('studio5_sites', JSON.stringify(sites));
-  } else {
-    let changed = false;
-    Object.keys(DEFAULT_SITES).forEach(key => {
-      if (!sites[key]) { sites[key] = DEFAULT_SITES[key]; changed = true; }
-    });
-    if (changed) await localDB.set('studio5_sites', JSON.stringify(sites));
-  }
-  renderSites();
-  populateSiteDropdowns();
+  await loadParties();
 }
 
-function renderSites() {
-  const grid = document.getElementById('site-grid');
+async function loadParties() {
+  try {
+    const res = await localDB.get('studio5_parties');
+    parties = res && res.value ? JSON.parse(res.value) : null;
+  } catch (e) { parties = null; }
+
+  if (!parties) {
+    parties = Object.assign({}, DEFAULT_PARTIES);
+    try {
+      const oldB = await localDB.get('studio5_buyers');
+      if (oldB && oldB.value) Object.assign(parties, JSON.parse(oldB.value));
+      const oldS = await localDB.get('studio5_sites');
+      if (oldS && oldS.value) {
+        const sObj = JSON.parse(oldS.value);
+        Object.entries(sObj).forEach(([k, s]) => {
+          if (!parties[k]) {
+            parties[k] = {
+              label: s.label,
+              name: s.receiver_name || s.name || '',
+              address: s.site_address || s.address || '',
+              gstin: s.gstin || '',
+              attn: s.attn || ''
+            };
+          }
+        });
+      }
+    } catch (e) {}
+    await localDB.set('studio5_parties', JSON.stringify(parties));
+  } else {
+    let changed = false;
+    Object.keys(DEFAULT_PARTIES).forEach(key => {
+      if (!parties[key]) { parties[key] = DEFAULT_PARTIES[key]; changed = true; }
+    });
+    if (changed) await localDB.set('studio5_parties', JSON.stringify(parties));
+  }
+  buyers = parties;
+  sites = parties;
+  renderParties();
+  populatePartyDropdowns();
+}
+
+function renderParties() {
+  const grid = document.getElementById('buyer-grid');
   if (!grid) return;
   grid.innerHTML = '';
-  Object.entries(sites).forEach(([key, s]) => {
+  Object.entries(parties).forEach(([key, b]) => {
     const box = document.createElement('div');
     box.className = 'addr-box';
-    box.innerHTML = `<div class="label">${s.label}</div>
-      <div>${s.receiver_name}</div>
-      <div>${s.site_address}</div>`;
+    box.innerHTML = `<div class="label">${escapeHtml(b.label || b.name)}</div>
+      <div><strong>${escapeHtml(b.name || '')}</strong></div>
+      <div style="white-space:pre-line;">${escapeHtml(b.address || b.site_address || '')}</div>
+      ${b.gstin ? `<div>GSTIN: <code>${escapeHtml(b.gstin)}</code></div>` : ''}
+      ${b.attn ? `<div>Kind Attn: ${escapeHtml(b.attn)}</div>` : ''}`;
     grid.appendChild(box);
   });
 }
 
-function populateSiteDropdowns() {
-  ['challan-site-select'].forEach(id => {
+function renderBuyers() { renderParties(); }
+function renderSites() { renderParties(); }
+
+function populatePartyDropdowns() {
+  const dropdownIds = ['pi-buyer-select', 'inv-buyer-select', 'challan-site-select', 'gen-site-select'];
+  dropdownIds.forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
-    sel.innerHTML = '<option value="">-- Type manually / new site --</option>';
-    Object.entries(sites).forEach(([key, s]) => {
+    const currentVal = sel.value;
+    sel.innerHTML = '<option value="">-- Select saved party / new address --</option>';
+    Object.entries(parties).forEach(([key, p]) => {
       const opt = document.createElement('option');
       opt.value = key;
-      opt.textContent = s.label;
+      opt.textContent = p.label || p.name;
       sel.appendChild(opt);
     });
+    if (currentVal && parties[currentVal]) sel.value = currentVal;
   });
 }
 
-function applySiteSelection(prefix) {
-  const sel = document.getElementById(prefix + '-site-select');
-  const key = sel.value;
+function populateBuyerDropdowns() { populatePartyDropdowns(); }
+function populateSiteDropdowns() { populatePartyDropdowns(); }
+
+function applyPartySelection(target) {
+  let selId = '';
+  if (target === 'pi') selId = 'pi-buyer-select';
+  else if (target === 'inv') selId = 'inv-buyer-select';
+  else if (target === 'challan' || target === 'challan-site') selId = 'challan-site-select';
+  else if (target === 'po' || target === 'po-site') selId = 'gen-site-select';
+
+  const sel = document.getElementById(selId);
+  const key = sel ? sel.value : '';
   if (!key) return;
-  const s = sites[key];
-  document.getElementById(prefix + '-receiver-name').value = s.receiver_name;
-  document.getElementById(prefix + '-site-address').value = s.site_address;
+  const p = parties[key] || DEFAULT_PARTIES[key];
+  if (!p) return;
+
+  if (target === 'pi') {
+    document.getElementById('pi-buyer-name').value = p.name || '';
+    document.getElementById('pi-buyer-address').value = p.address || p.site_address || '';
+    document.getElementById('pi-buyer-gstin').value = p.gstin || '';
+    document.getElementById('pi-buyer-attn').value = p.attn || '';
+  } else if (target === 'inv') {
+    document.getElementById('inv-buyer-name').value = p.name || '';
+    document.getElementById('inv-buyer-address').value = p.address || p.site_address || '';
+    document.getElementById('inv-buyer-gstin').value = p.gstin || '';
+    document.getElementById('inv-buyer-attn').value = p.attn || '';
+  } else if (target === 'challan' || target === 'challan-site') {
+    document.getElementById('challan-receiver-name').value = p.receiver_name || p.name || '';
+    document.getElementById('challan-site-address').value = p.site_address || p.address || '';
+  } else if (target === 'po' || target === 'po-site') {
+    const siteText = p.name ? (p.name + '\n' + (p.address || p.site_address || '')) : (p.address || p.site_address || '');
+    document.getElementById('gen-site').value = siteText.trim();
+  }
 }
 
-async function saveCurrentAsSite(prefix) {
-  const receiver_name = document.getElementById(prefix + '-receiver-name').value.trim();
-  const site_address = document.getElementById(prefix + '-site-address').value.trim();
-  if (!receiver_name || !site_address) { alert('Fill in receiver name and site address first.'); return; }
-  const label = prompt('Save this delivery site as (label):', site_address.split(',')[0]);
+function applyBuyerSelection(prefix) { applyPartySelection(prefix); }
+function applySiteSelection(prefix) { applyPartySelection(prefix); }
+
+async function saveCurrentAsParty(prefix) {
+  let name = '', address = '', gstin = '', attn = '';
+  if (prefix === 'pi' || prefix === 'inv') {
+    name = (document.getElementById(prefix + '-buyer-name')?.value || '').trim();
+    address = (document.getElementById(prefix + '-buyer-address')?.value || '').trim();
+    gstin = (document.getElementById(prefix + '-buyer-gstin')?.value || '').trim();
+    attn = (document.getElementById(prefix + '-buyer-attn')?.value || '').trim();
+  } else if (prefix === 'challan') {
+    name = (document.getElementById('challan-receiver-name')?.value || '').trim();
+    address = (document.getElementById('challan-site-address')?.value || '').trim();
+  } else if (prefix === 'po-site') {
+    address = (document.getElementById('gen-site')?.value || '').trim();
+    name = address.split('\n')[0] || '';
+  }
+
+  if (!name && !address) {
+    alert('Please enter a name or address first.');
+    return;
+  }
+  const defaultLabel = (name || address.split(',')[0] || 'Saved Party').replace(/,$/, '');
+  const label = prompt('Save this client / address to library as (label):', defaultLabel);
   if (!label) return;
   const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
-  sites[key] = { label, receiver_name, site_address };
-  await localDB.set('studio5_sites', JSON.stringify(sites));
-  renderSites();
-  populateSiteDropdowns();
-  alert('Saved to delivery site library.');
+
+  parties[key] = { label, name, address, gstin, attn };
+  buyers = parties;
+  sites = parties;
+
+  await localDB.set('studio5_parties', JSON.stringify(parties));
+  await localDB.set('studio5_buyers', JSON.stringify(parties));
+  await localDB.set('studio5_sites', JSON.stringify(parties));
+
+  renderParties();
+  populatePartyDropdowns();
+  alert(`✓ "${label}" saved to Address Book.`);
+}
+
+function saveCurrentAsBuyer(prefix) { return saveCurrentAsParty(prefix); }
+function saveCurrentAsSite(prefix) { return saveCurrentAsParty(prefix); }
+
+// Voice Party & Address Dictation
+let activePartyMediaRecorder = null;
+let activePartyTargetId = null;
+let partyAudioChunks = [];
+let partyMediaStream = null;
+
+async function togglePartyVoiceDictation(targetId) {
+  if (activePartyMediaRecorder && activePartyTargetId === targetId) {
+    await stopPartyVoiceDictation(targetId);
+  } else {
+    if (activePartyMediaRecorder) {
+      await stopPartyVoiceDictation(activePartyTargetId);
+    }
+    await startPartyVoiceDictation(targetId);
+  }
+}
+
+async function startPartyVoiceDictation(targetId) {
+  const btn = document.getElementById(`mic-btn-${targetId}`);
+  try {
+    partyMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    partyAudioChunks = [];
+    const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    let supportedMime = '';
+    for (const m of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(m)) {
+        supportedMime = m;
+        break;
+      }
+    }
+    const options = supportedMime ? { mimeType: supportedMime } : {};
+    activePartyMediaRecorder = new MediaRecorder(partyMediaStream, options);
+    activePartyTargetId = targetId;
+
+    activePartyMediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) partyAudioChunks.push(e.data);
+    };
+
+    activePartyMediaRecorder.start();
+
+    if (btn) {
+      btn.classList.add('recording');
+      btn.innerHTML = '🛑 Stop & Fill';
+      btn.title = 'Recording... Click to parse address';
+    }
+  } catch (err) {
+    console.error("Mic access error:", err);
+    alert("Microphone error: " + (err.message || err.name));
+    cleanupPartyRecordingUI(targetId);
+  }
+}
+
+async function stopPartyVoiceDictation(targetId) {
+  if (!activePartyMediaRecorder || activePartyTargetId !== targetId) return;
+  const btn = document.getElementById(`mic-btn-${targetId}`);
+
+  return new Promise((resolve) => {
+    activePartyMediaRecorder.onstop = async () => {
+      if (partyMediaStream) {
+        partyMediaStream.getTracks().forEach(t => t.stop());
+        partyMediaStream = null;
+      }
+
+      if (btn) {
+        btn.classList.remove('recording');
+        btn.classList.add('processing');
+        btn.innerHTML = '⏳ AI Parsing Address...';
+      }
+
+      try {
+        const mimeType = activePartyMediaRecorder.mimeType || 'audio/webm';
+        const ext = mimeType.includes('mp4') ? 'mp4' : (mimeType.includes('ogg') ? 'ogg' : 'webm');
+        const audioBlob = new Blob(partyAudioChunks, { type: mimeType });
+
+        const formData = new FormData();
+        formData.append('audio', audioBlob, `party-speech-${Date.now()}.${ext}`);
+
+        if (typeof geminiApiKey !== 'undefined' && geminiApiKey) {
+          formData.append('geminiApiKey', geminiApiKey);
+        }
+
+        const effectiveBackend = (typeof backendUrl !== 'undefined' && backendUrl)
+          ? backendUrl
+          : (window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000');
+
+        const headers = {};
+        if (typeof geminiApiKey !== 'undefined' && geminiApiKey) headers['x-gemini-key'] = geminiApiKey;
+
+        const res = await fetch(`${effectiveBackend}/api/parse-party-audio`, {
+          method: 'POST',
+          headers,
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Server error: ${res.status}`);
+        }
+
+        const data = await res.json();
+        console.log("Party dictation parsed:", data);
+
+        if (data) {
+          if (targetId === 'pi-buyer') {
+            if (data.name) document.getElementById('pi-buyer-name').value = data.name;
+            if (data.address) document.getElementById('pi-buyer-address').value = data.address;
+            if (data.gstin) document.getElementById('pi-buyer-gstin').value = data.gstin;
+            if (data.attn) document.getElementById('pi-buyer-attn').value = data.attn;
+          } else if (targetId === 'inv-buyer') {
+            if (data.name) document.getElementById('inv-buyer-name').value = data.name;
+            if (data.address) document.getElementById('inv-buyer-address').value = data.address;
+            if (data.gstin) document.getElementById('inv-buyer-gstin').value = data.gstin;
+            if (data.attn) document.getElementById('inv-buyer-attn').value = data.attn;
+          } else if (targetId === 'challan-site') {
+            if (data.name) document.getElementById('challan-receiver-name').value = data.name;
+            if (data.address) document.getElementById('challan-site-address').value = data.address;
+          } else if (targetId === 'po-site') {
+            const combined = (data.name ? data.name + '\n' : '') + (data.address || '');
+            if (combined.trim()) document.getElementById('gen-site').value = combined.trim();
+          } else if (targetId === 'po-vendor') {
+            if (data.name) document.getElementById('gen-vendor-name').value = data.name;
+            if (data.address) document.getElementById('gen-vendor-address').value = data.address;
+            if (data.gstin) document.getElementById('gen-vendor-gstin').value = data.gstin;
+            if (data.attn) document.getElementById('gen-vendor-contact').value = data.attn;
+          }
+
+          if (data.name && data.address) {
+            const autoKey = (data.label || data.name).toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
+            if (!parties[autoKey]) {
+              parties[autoKey] = {
+                label: data.label || data.name,
+                name: data.name,
+                address: data.address,
+                gstin: data.gstin || '',
+                attn: data.attn || ''
+              };
+              await localDB.set('studio5_parties', JSON.stringify(parties));
+              renderParties();
+              populatePartyDropdowns();
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Party voice fill error:", err);
+        alert("Voice Fill Error: " + err.message);
+      } finally {
+        cleanupPartyRecordingUI(targetId);
+        activePartyMediaRecorder = null;
+        activePartyTargetId = null;
+        partyAudioChunks = [];
+        resolve();
+      }
+    };
+    activePartyMediaRecorder.stop();
+  });
+}
+
+function cleanupPartyRecordingUI(targetId) {
+  const btn = document.getElementById(`mic-btn-${targetId}`);
+  if (btn) {
+    btn.classList.remove('recording');
+    btn.classList.remove('processing');
+    btn.innerHTML = targetId.includes('site') ? '🎙️ Voice Fill Site' : (targetId.includes('vendor') ? '🎙️ Voice Fill Vendor' : '🎙️ Voice Fill Details');
+  }
 }
 
 function escapeHtml(str) {

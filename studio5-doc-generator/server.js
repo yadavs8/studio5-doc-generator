@@ -574,6 +574,126 @@ Return ONLY valid JSON matching this schema:
   }
 });
 
+app.post("/api/parse-party-audio", upload.single("audio"), async (req, res) => {
+  const tempFilePath = req.file ? req.file.path : null;
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No audio file uploaded" });
+    }
+
+    const geminiApiKey = req.body.geminiApiKey || req.headers["x-gemini-key"] || process.env.GEMINI_API_KEY;
+
+    if (geminiApiKey) {
+      try {
+        console.log(`[parse-party-audio] Processing party voice via Google Gemini (Free Tier)...`);
+        const audioBuffer = fs.readFileSync(req.file.path);
+        const cleanBase64 = audioBuffer.toString("base64");
+
+        let actualMime = req.file.mimetype || "audio/webm";
+        if (actualMime.includes("webm")) actualMime = "audio/webm";
+        else if (actualMime.includes("mp4")) actualMime = "audio/mp4";
+        else if (actualMime.includes("ogg")) actualMime = "audio/ogg";
+        else if (actualMime.includes("wav")) actualMime = "audio/wav";
+        else actualMime = "audio/webm";
+
+        const promptText = `You are an administrative and accounting assistant for Studio5 Interiors (an interior contracting firm in India).
+Listen carefully to this spoken audio in Hindi, Hinglish, or English where the user is dictating party, client, buyer, vendor, or project site details.
+Extract and structure the information into clean, formal Indian business format:
+1. "name": The formal business, company, hotel, or individual client name. If informal, capitalize properly (e.g., 'Lemon Tree Hotels', 'DLF Cyber City Developers').
+2. "address": The complete, properly formatted multi-line postal address with street, area/sector, city, state, and 6-digit PIN code.
+3. "gstin": The 15-character Indian Goods & Services Tax identification number if spoken (e.g., '06AAACC3164A1ZD'). If not spoken or unclear, return "".
+4. "attn": Contact person name or 'Kind Attention' designation (e.g., 'Mr. Kuldeep Ji', 'Amit Verma (Project Head)'), plus phone number if mentioned.
+5. "label": A clean, concise label for dropdown menus (e.g., 'Lemon Tree Hotel, Dehradun' or 'DLF Cyber City - Phase 5').
+
+Return ONLY valid JSON matching this schema:
+{
+  "transcript": "string",
+  "label": "string",
+  "name": "string",
+  "address": "string",
+  "gstin": "string",
+  "attn": "string"
+}`;
+
+        const callGemini = async (modelName) => {
+          return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { inlineData: { mimeType: actualMime, data: cleanBase64 } },
+                    { text: promptText }
+                  ]
+                }
+              ],
+              generationConfig: { responseMimeType: "application/json" }
+            })
+          });
+        };
+
+        const available = await getAvailableGeminiModels(geminiApiKey);
+        const preferred = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp"];
+        let candidateModels = [];
+        if (available.length > 0) {
+          for (const p of preferred) {
+            if (available.includes(p)) candidateModels.push(p);
+          }
+          for (const m of available) {
+            if (!candidateModels.includes(m) && m.includes("flash")) candidateModels.push(m);
+          }
+          if (candidateModels.length === 0) candidateModels = available;
+        } else {
+          candidateModels = preferred;
+        }
+
+        let geminiResponse = null;
+        for (const model of candidateModels) {
+          console.log(`[parse-party-audio] Attempting Gemini model: ${model}`);
+          geminiResponse = await callGemini(model);
+          if (geminiResponse.ok) break;
+        }
+
+        if (geminiResponse && geminiResponse.ok) {
+          const gData = await geminiResponse.json();
+          const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawText) {
+            const match = rawText.match(/\{[\s\S]*\}/);
+            const parsed = match ? JSON.parse(match[0]) : JSON.parse(rawText);
+            return res.json({
+              success: true,
+              engine: "gemini-free",
+              transcript: parsed.transcript || "",
+              data: parsed,
+              label: parsed.label || parsed.name || "New Party",
+              name: parsed.name || "",
+              address: parsed.address || "",
+              gstin: parsed.gstin || "",
+              attn: parsed.attn || ""
+            });
+          }
+        }
+      } catch (geminiErr) {
+        console.warn("[parse-party-audio] Gemini attempt failed:", geminiErr.message);
+      }
+    }
+
+    return res.status(400).json({
+      error: "No AI key available. Please configure GEMINI_API_KEY on Render."
+    });
+  } catch (err) {
+    console.error("Party audio parsing error:", err);
+    return res.status(500).json({ error: err.message || "Failed to parse party audio" });
+  } finally {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      fs.unlink(tempFilePath, (err) => {
+        if (err) console.warn("Could not delete temp audio file:", tempFilePath, err.message);
+      });
+    }
+  }
+});
+
 app.get("/api/config-status", (req, res) => {
   res.json({
     gemini: !!process.env.GEMINI_API_KEY,
