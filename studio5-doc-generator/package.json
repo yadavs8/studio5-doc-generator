@@ -7,8 +7,11 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@supabase/supabase-js": "^2.45.4",
     "docx": "^9.0.0",
-    "@supabase/supabase-js": "^2.45.4"
+    "express": "^4.19.2",
+    "multer": "^2.4.0",
+    "openai": "^7.23.0"
   }
 }

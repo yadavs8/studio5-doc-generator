@@ -1,6 +1,9 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const multer = require("multer");
+const OpenAI = require("openai");
+const Anthropic = require("@anthropic-ai/sdk");
 
 const generatePO = require("./generators/generate_po.js");
 const generatePI = require("./generators/generate_pi.js");
@@ -8,11 +11,29 @@ const generateInvoice = require("./generators/generate_invoice.js");
 const generateChallan = require("./generators/generate_challan.js");
 const documentNumbering = require("./lib/documentNumbering.js");
 
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || (file.mimetype.includes("mp4") ? ".mp4" : ".webm");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, `audio-${uniqueSuffix}${ext}`);
+  }
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 25 * 1024 * 1024 }
+});
+
 const app = express();
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-gemini-key, x-openai-key, x-anthropic-key");
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
@@ -365,6 +386,103 @@ app.post("/generate/challan", async (req, res) => {
     sendDocx(res, buf, `Delivery_Challan_${safeFilenamePart(docNumber)}.docx`, docNumber);
   } catch (e) {
     handleLedgerError(res, e);
+  }
+});
+
+app.post("/api/parse-item-audio", upload.single("audio"), async (req, res) => {
+  const tempFilePath = req.file ? req.file.path : null;
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No audio file uploaded" });
+    }
+
+    const openaiApiKey = req.body.openaiApiKey || req.headers["x-openai-key"] || process.env.OPENAI_API_KEY;
+    const anthropicApiKey = req.body.anthropicApiKey || req.headers["x-anthropic-key"] || process.env.ANTHROPIC_API_KEY;
+
+    if (!openaiApiKey) {
+      return res.status(400).json({
+        error: "OpenAI API key is required for voice transcription. Please set OPENAI_API_KEY or configure it in the Library tab."
+      });
+    }
+
+    if (!anthropicApiKey) {
+      return res.status(400).json({
+        error: "Anthropic API key is required for estimation parsing. Please set ANTHROPIC_API_KEY or configure it in the Library tab."
+      });
+    }
+
+    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+
+    console.log(`[parse-item-audio] Transcribing audio with Whisper (${req.file.path})...`);
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(req.file.path),
+      model: "whisper-1",
+      language: "hi"
+    });
+
+    const transcript = (transcription.text || "").trim();
+    console.log(`[parse-item-audio] Transcript: "${transcript}"`);
+
+    if (!transcript) {
+      return res.status(400).json({ error: "No spoken speech was detected in the audio recording." });
+    }
+
+    console.log(`[parse-item-audio] Parsing transcript with Claude 3.5 Sonnet...`);
+    const claudeMsg = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1024,
+      system: `You are the Chief Fit-Out Estimator for Studio5 Interiors.
+Parse this raw spoken transcript into a structured contracting line item.
+The user is speaking in Hindi/English. Translate informal terms (e.g., 'malba') into formal terms ('Debris Carting Away').
+UOM must strictly be one of: 'sqft', 'rft', 'nos', or 'lumpsum'.
+If rate or quantity is not explicitly spoken, return null for those fields.
+
+Return ONLY valid JSON matching this schema:
+{
+  "description": "string",
+  "uom": "string",
+  "qty": number | null,
+  "rate": number | null
+}`,
+      messages: [
+        { role: "user", content: transcript }
+      ]
+    });
+
+    let rawText = "";
+    if (claudeMsg.content && claudeMsg.content.length > 0) {
+      rawText = claudeMsg.content.map(c => c.text || "").join("\n");
+    }
+
+    console.log(`[parse-item-audio] Claude response:`, rawText);
+
+    let parsedData = null;
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      parsedData = JSON.parse(jsonMatch[0]);
+    } else {
+      parsedData = JSON.parse(rawText);
+    }
+
+    return res.json({
+      success: true,
+      transcript,
+      data: parsedData,
+      description: parsedData.description || "",
+      uom: parsedData.uom || "",
+      qty: parsedData.qty ?? null,
+      rate: parsedData.rate ?? null
+    });
+  } catch (err) {
+    console.error("Audio parsing error:", err);
+    return res.status(500).json({ error: err.message || "Failed to parse item audio" });
+  } finally {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      fs.unlink(tempFilePath, (err) => {
+        if (err) console.warn("Could not delete temp audio file:", tempFilePath, err.message);
+      });
+    }
   }
 });
 
