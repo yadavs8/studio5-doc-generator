@@ -117,21 +117,38 @@ payload.sections.forEach((sec, si) => {
     ]
   });
 
-  // No separate heading paragraph above the table — the name (if any) is now row "1" itself.
-  sectionBlocks.push(new Table({ width: { size: totalWidth, type: WidthType.DXA }, columnWidths: colWidths, rows: [headerRow, ...itemRows, totalRow] }));
-});
+  const isLastSection = si === payload.sections.length - 1;
+  const attachedTotals = [];
+  if (isLastSection) {
+    function makeTotalRow(label, value, bold = false) {
+      const labelWidth = colWidths.slice(0, totalSpan).reduce((a, b) => a + b, 0);
+      const valWidth = colWidths[hasRooms ? 6 : 5];
+      return new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: totalSpan,
+            width: { size: labelWidth, type: WidthType.DXA },
+            children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: label, bold, size: 20 })] })]
+          }),
+          cell(fmt(value), { width: valWidth, align: AlignmentType.RIGHT, bold })
+        ]
+      });
+    }
+    attachedTotals.push(makeTotalRow("Project Total (before GST)", payload.project_total, true));
+    attachedTotals.push(makeTotalRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false));
+    if (payload.round_off) {
+      attachedTotals.push(makeTotalRow("Round off", Math.abs(payload.round_off), false));
+    }
+    attachedTotals.push(makeTotalRow("GRAND TOTAL", payload.grand_total, true));
+  }
 
-function overallTotalsRow(label, value, bold = false) {
-  return new TableRow({
-    children: [
-      new TableCell({
-        columnSpan: 1, width: { size: totalWidth - 1406, type: WidthType.DXA },
-        children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: label, bold })] })]
-      }),
-      cell(fmt(value), { width: 1406, align: AlignmentType.RIGHT, bold })
-    ]
-  });
-}
+  // No separate heading paragraph above the table — the name (if any) is now row "1" itself.
+  sectionBlocks.push(new Table({
+    width: { size: totalWidth, type: WidthType.DXA },
+    columnWidths: colWidths,
+    rows: [headerRow, ...itemRows, totalRow, ...attachedTotals]
+  }));
+});
 
 const doc = new Document({
   sections: [{
@@ -187,17 +204,6 @@ const doc = new Document({
         new Paragraph({ text: "" }),
       ] : []),
       ...sectionBlocks,
-      new Paragraph({ text: "" }),
-      new Table({
-        width: { size: totalWidth, type: WidthType.DXA },
-        borders: { top: {style:BorderStyle.NONE}, bottom:{style:BorderStyle.NONE}, left:{style:BorderStyle.NONE}, right:{style:BorderStyle.NONE}, insideHorizontal:{style:BorderStyle.NONE}, insideVertical:{style:BorderStyle.NONE} },
-        rows: [
-          overallTotalsRow("Project Total (before GST)", payload.project_total, true),
-          overallTotalsRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false),
-          ...(payload.round_off ? [overallTotalsRow("Round off", Math.abs(payload.round_off), false)] : []),
-          overallTotalsRow("GRAND TOTAL", payload.grand_total, true),
-        ]
-      }),
       new Paragraph({ text: "" }),
       new Paragraph({ children: [new TextRun({ text: `Amount in words: ${payload.amount_in_words}`, italics: true, size: 20 })] }),
       new Paragraph({ text: "" }),
