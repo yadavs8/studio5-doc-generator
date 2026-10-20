@@ -626,7 +626,7 @@
         </div>
       </div>
       <table id="challan-items-table">
-        <thead><tr><th>#</th><th>Particulars</th><th>Length (mm)</th><th>Breadth (mm)</th><th>Height (mm)</th><th>Qty</th><th>Unit</th><th></th></tr></thead>
+        <thead><tr><th data-col="sr">#</th><th data-col="part">Particulars</th><th data-col="length">Length (mm)</th><th data-col="breadth">Breadth (mm)</th><th data-col="height">Height (mm)</th><th data-col="qty">Qty</th><th data-col="unit">Unit</th><th></th></tr></thead>
         <tbody id="challan-items-body"></tbody>
       </table>
       <button class="btn secondary small" onclick="addChallanItemRow()">+ Add row</button>
@@ -1321,24 +1321,143 @@ function syncRowExtraCols(tr, docType) {
   });
 }
 
-function rebuildExtraColumnsForDocType(docType) {
-  getTablesForDocType(docType).forEach(({ theadRow, tbody }) => {
-    syncHeaderExtraCols(theadRow, docType);
-    if (tbody) Array.from(tbody.children).forEach(tr => syncRowExtraCols(tr, docType));
+const BASE_COL_CHOICES = {
+  po: [['part', 'Particulars'], ['hsn', 'HSN/SAC'], ['qty', 'Qty'], ['uom', 'UOM'], ['rate', 'Rate']],
+  pi: [['part', 'Particulars'], ['qty', 'Qty'], ['uom', 'UOM'], ['rate', 'Rate'], ['rooms', 'No. of Rooms (room-wise sections)']],
+  inv: [['part', 'Particulars'], ['qty', 'Qty'], ['uom', 'UOM'], ['rate', 'Rate'], ['rooms', 'No. of Rooms (room-wise sections)']],
+  challan: [['part', 'Particulars'], ['length', 'Length'], ['breadth', 'Breadth'], ['height', 'Height'], ['qty', 'Qty'], ['unit', 'Unit']]
+};
+
+// Keep in sync with layoutColumnIds in lib/columnLayout.js so the screen and the .docx agree.
+function layoutColumnIds(baseIds, extras) {
+  const ids = baseIds.slice();
+  const lastAt = {};
+  (extras || []).forEach(x => {
+    let anchor = x.after || 'end';
+    if (!['start', 'end', 'last'].includes(anchor) && !ids.includes(anchor)) anchor = 'end';
+    let pos;
+    if (lastAt[anchor]) pos = ids.indexOf(lastAt[anchor]) + 1;
+    else if (anchor === 'start') pos = Math.max(0, ids.indexOf('part'));
+    else if (anchor === 'end') pos = ids.includes('amount') ? ids.indexOf('amount') : ids.length;
+    else if (anchor === 'last') pos = ids.length;
+    else pos = ids.indexOf(anchor) + 1;
+    ids.splice(pos, 0, x.key);
+    lastAt[anchor] = x.key;
+  });
+  return ids;
+}
+
+const CELL_INPUT_COLS = [
+  ['f-part', 'part'], ['c-part', 'part'], ['f-hsn', 'hsn'], ['f-qty', 'qty'], ['c-qty', 'qty'], ['f-uom', 'uom'],
+  ['f-rate', 'rate'], ['f-rooms', 'rooms'], ['c-length', 'length'], ['c-breadth', 'breadth'], ['c-height', 'height'], ['c-unit', 'unit']
+];
+
+function cellColId(cell) {
+  if (cell.dataset.extraCol) return cell.dataset.extraCol;
+  if (cell.dataset.col) return cell.dataset.col;
+  if (cell.classList.contains('f-amount')) return 'amount';
+  const match = CELL_INPUT_COLS.find(([cls]) => cell.querySelector('.' + cls));
+  return match ? match[1] : null;
+}
+
+// Cells we can't identify (the row-actions cell) stay at the end of the row.
+function orderExtraCells(tr, docType) {
+  const extras = extraCols[docType] || [];
+  if (!tr || !extras.length) return;
+  const byId = {};
+  const baseIds = [];
+  const trailing = [];
+  Array.from(tr.children).forEach(cell => {
+    const id = cellColId(cell);
+    if (!id) { trailing.push(cell); return; }
+    byId[id] = cell;
+    if (!cell.dataset.extraCol) baseIds.push(id);
+  });
+  layoutColumnIds(baseIds, extras).forEach(id => { if (byId[id]) tr.appendChild(byId[id]); });
+  trailing.forEach(cell => tr.appendChild(cell));
+}
+
+const EXTRA_COL_CONTAINERS = { po: 'po-sections', pi: 'pi-sections', inv: 'inv-sections', challan: 'challan-items-table' };
+
+function docTypeForRow(tr) {
+  return Object.keys(EXTRA_COL_CONTAINERS).find(dt => tr.closest('#' + EXTRA_COL_CONTAINERS[dt])) || null;
+}
+
+// Rows and section tables are created from many places; reorder each new one as it lands.
+function watchExtraColumnOrder() {
+  const observer = new MutationObserver(mutations => {
+    const rows = new Set();
+    mutations.forEach(m => m.addedNodes.forEach(n => {
+      if (n.nodeType !== 1) return;
+      if (n.tagName === 'TR') rows.add(n);
+      else n.querySelectorAll('tr').forEach(tr => rows.add(tr));
+    }));
+    rows.forEach(tr => {
+      const dt = docTypeForRow(tr);
+      if (dt) orderExtraCells(tr, dt);
+    });
+  });
+  Object.values(EXTRA_COL_CONTAINERS).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) observer.observe(el, { childList: true, subtree: true });
   });
 }
 
+function rebuildExtraColumnsForDocType(docType) {
+  getTablesForDocType(docType).forEach(({ theadRow, tbody }) => {
+    syncHeaderExtraCols(theadRow, docType);
+    orderExtraCells(theadRow, docType);
+    if (tbody) Array.from(tbody.children).forEach(tr => {
+      syncRowExtraCols(tr, docType);
+      orderExtraCells(tr, docType);
+    });
+  });
+}
+
+let addColumnDocType = null;
+
 function addExtraColumn(docType) {
-  const label = (prompt('New column name:') || '').trim();
-  if (!label) return;
+  addColumnDocType = docType;
+  const opts = [['start', 'At the start (before Particulars)']];
+  BASE_COL_CHOICES[docType].forEach(([id, label]) => opts.push([id, 'After ' + label]));
+  if (docType === 'challan') opts.push(['end', 'At the end']);
+  else opts.push(['end', 'Just before Amount'], ['last', 'After Amount (last column)']);
+  (extraCols[docType] || []).forEach(c => opts.push([c.key, 'After ' + c.label]));
+  const sel = document.getElementById('add-col-position');
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${escapeHtml(v)}">${escapeHtml(l)}</option>`).join('');
+  sel.value = 'end';
+  const nameInp = document.getElementById('add-col-name');
+  nameInp.value = '';
+  document.getElementById('add-column-modal').classList.add('active');
+  setTimeout(() => nameInp.focus(), 50);
+}
+
+function closeAddColumnModal() {
+  document.getElementById('add-column-modal').classList.remove('active');
+  addColumnDocType = null;
+}
+
+function confirmAddColumn() {
+  const docType = addColumnDocType;
+  const nameInp = document.getElementById('add-col-name');
+  const label = nameInp.value.trim();
+  if (!docType) return;
+  if (!label) { nameInp.focus(); return; }
+  const after = document.getElementById('add-col-position').value || 'end';
   const key = 'extra_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') + '_' + Date.now().toString(36).slice(-5);
-  extraCols[docType].push({ key, label });
+  extraCols[docType].push({ key, label, after });
+  closeAddColumnModal();
   rebuildExtraColumnsForDocType(docType);
+  saveDraft(docType);
 }
 
 function removeExtraColumn(docType, key) {
+  const removed = (extraCols[docType] || []).find(c => c.key === key);
+  // Columns placed after the removed one take over its spot instead of jumping to the end.
+  if (removed) extraCols[docType].forEach(c => { if (c.after === key) c.after = removed.after || 'end'; });
   extraCols[docType] = (extraCols[docType] || []).filter(c => c.key !== key);
   rebuildExtraColumnsForDocType(docType);
+  saveDraft(docType);
 }
 
 function getExtraColumnValuesFromRow(row) {
@@ -1350,7 +1469,7 @@ function getExtraColumnValuesFromRow(row) {
 }
 
 function buildExtraColumnsPayload(docType) {
-  return (extraCols[docType] || []).map(c => ({ key: c.key, label: c.label }));
+  return (extraCols[docType] || []).map(c => ({ key: c.key, label: c.label, after: c.after || 'end' }));
 }
 
 // --- Autosave drafts to localStorage (survives accidental reload / backgrounding on phone) ---
@@ -1828,7 +1947,7 @@ function addPOSection(prefillName, prefillItems) {
     </div>
     <table class="po-items-table">
       <thead>
-        <tr><th>Particulars</th><th>HSN/SAC</th><th>Qty</th><th>UOM</th><th>Rate</th>${extraColsHeaderHtml('po')}<th>Amount</th><th></th></tr>
+        <tr><th data-col="part">Particulars</th><th data-col="hsn">HSN/SAC</th><th data-col="qty">Qty</th><th data-col="uom">UOM</th><th data-col="rate">Rate</th>${extraColsHeaderHtml('po')}<th data-col="amount">Amount</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -2040,43 +2159,78 @@ function buildDocumentPrintHTML(docType, payload) {
     </div>
   ` : '';
 
-  // Items table
+  // Items table — same column order as the on-screen table and the Word file (see layoutColumnIds).
+  const TH = 'border:1px solid #94a3b8; padding:6px;';
+  const TD = 'border:1px solid #cbd5e1; padding:5px;';
+  const printExtras = Array.isArray(payload.extra_columns) ? payload.extra_columns : [];
+  const printCols = (base) => {
+    const byId = {};
+    base.forEach(c => { byId[c.id] = c; });
+    printExtras.forEach(x => {
+      byId[x.key] = { id: x.key, label: x.label, align: 'center', width: 70, value: it => escapeHtml(String(((it && it.extra) || {})[x.key] ?? '')) };
+    });
+    return layoutColumnIds(base.map(c => c.id), printExtras).map(id => byId[id]);
+  };
+  const headRow = (cols) => `
+          <tr style="background:#d6e9f8; color:#0f172a;">
+            ${cols.map(c => `<th style="${TH}${c.align ? ` text-align:${c.align};` : ''}${c.width ? ` width:${c.width}px;` : ''}">${escapeHtml(c.label)}</th>`).join('')}
+          </tr>`;
+  const bodyRow = (cols, it, sr) => `
+            <tr>
+              ${cols.map(c => `<td style="${TD}${c.align ? ` text-align:${c.align};` : ''}${c.bold ? ' font-weight:600;' : ''}">${c.id === 'sr' ? sr : c.value(it)}</td>`).join('')}
+            </tr>`;
+  // Label spans every column before `valueId`; any columns after it get one empty cell.
+  const spanRow = (cols, valueId, trStyle, labelStyle, label, valueStyle, value) => {
+    const idx = cols.findIndex(c => c.id === valueId);
+    const rest = cols.length - idx - 1;
+    return `
+          <tr${trStyle ? ` style="${trStyle}"` : ''}>
+            <td colspan="${idx}" style="${labelStyle}">${label}</td>
+            <td style="${valueStyle}">${value}</td>${rest > 0 ? `
+            <td colspan="${rest}" style="border:1px solid #cbd5e1;"></td>` : ''}
+          </tr>`;
+  };
+
   let tableHTML = '';
   if (docType === 'challan') {
+    const cols = printCols([
+      { id: 'sr', label: 'S.NO.', align: 'center', width: 40 },
+      { id: 'part', label: 'PARTICULARS', bold: true, value: it => escapeHtml(it.particulars || '') },
+      { id: 'length', label: 'LENGTH (mm)', align: 'center', width: 75, value: it => escapeHtml(it.length || '') },
+      { id: 'breadth', label: 'BREADTH (mm)', align: 'center', width: 75, value: it => escapeHtml(it.breadth || '') },
+      { id: 'height', label: 'HEIGHT (mm)', align: 'center', width: 75, value: it => escapeHtml(it.height || '') },
+      { id: 'qty', label: 'QTY', align: 'center', width: 55, bold: true, value: it => escapeHtml(it.qty || '') },
+      { id: 'unit', label: 'UNIT', align: 'center', width: 65, value: it => escapeHtml(it.unit || 'nos') },
+    ]);
+    const qtyIdx = cols.findIndex(c => c.id === 'qty');
+    const totalCells = cols.slice(qtyIdx).map(c => {
+      if (c.id === 'qty') return `<td style="border:1px solid #94a3b8; padding:7px; text-align:center; color:#0f172a;">${escapeHtml(payload.total_qty || '0')}</td>`;
+      if (c.id === 'unit') return `<td style="border:1px solid #94a3b8; padding:7px; text-align:center;">${escapeHtml(payload.unit_label || 'PCS / SET')}</td>`;
+      return `<td style="border:1px solid #94a3b8;"></td>`;
+    }).join('');
     tableHTML = `
       <table style="width:100%; border-collapse:collapse; margin:12px 0; font-size:11px; text-align:left;">
-        <thead>
-          <tr style="background:#d6e9f8; color:#0f172a;">
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:40px;">S.NO.</th>
-            <th style="border:1px solid #94a3b8; padding:6px;">PARTICULARS</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:75px;">LENGTH (mm)</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:75px;">BREADTH (mm)</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:75px;">HEIGHT (mm)</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">QTY</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">UNIT</th>
-          </tr>
+        <thead>${headRow(cols)}
         </thead>
         <tbody>
-          ${(payload.items || []).map((it, idx) => `
-            <tr>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${idx + 1}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; font-weight:600;">${escapeHtml(it.particulars || '')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.length || '')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.breadth || '')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.height || '')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center; font-weight:600;">${escapeHtml(it.qty || '')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.unit || 'nos')}</td>
-            </tr>
-          `).join('')}
+          ${(payload.items || []).map((it, idx) => bodyRow(cols, it, idx + 1)).join('')}
           <tr style="background:#f1f5f9; font-weight:700;">
-            <td colspan="5" style="border:1px solid #94a3b8; padding:7px; text-align:right;">TOTAL QUANTITY:</td>
-            <td style="border:1px solid #94a3b8; padding:7px; text-align:center; color:#0f172a;">${escapeHtml(payload.total_qty || '0')}</td>
-            <td style="border:1px solid #94a3b8; padding:7px; text-align:center;">${escapeHtml(payload.unit_label || 'PCS / SET')}</td>
+            <td colspan="${qtyIdx}" style="border:1px solid #94a3b8; padding:7px; text-align:right;">TOTAL QUANTITY:</td>
+            ${totalCells}
           </tr>
         </tbody>
       </table>
     `;
   } else if (docType === 'po') {
+    const cols = printCols([
+      { id: 'sr', label: 'Sr. No.', align: 'center', width: 45 },
+      { id: 'part', label: 'Particulars', value: it => escapeHtml(it.particulars || '') },
+      { id: 'hsn', label: 'HSN/SAC', align: 'center', width: 65, value: it => escapeHtml(it.hsn || '9403') },
+      { id: 'qty', label: 'Qty', align: 'center', width: 55, value: it => it.qty ?? '' },
+      { id: 'uom', label: 'UOM', align: 'center', width: 50, value: it => escapeHtml(it.uom || 'nos') },
+      { id: 'rate', label: 'Rate (₹)', align: 'right', width: 75, value: it => fmt(it.rate) },
+      { id: 'amount', label: 'Amount (₹)', align: 'right', width: 90, bold: true, value: it => fmt(it.amount) },
+    ]);
     let rowsHTML = '';
     if (payload.sections && payload.sections.length > 0) {
       payload.sections.forEach((sec, sIdx) => {
@@ -2084,74 +2238,39 @@ function buildDocumentPrintHTML(docType, payload) {
           rowsHTML += `
             <tr style="background:#f1f5f9; font-weight:700;">
               <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${sIdx + 1}</td>
-              <td colspan="6" style="border:1px solid #cbd5e1; padding:5px; color:#0369a1;">${escapeHtml(sec.name)}</td>
+              <td colspan="${cols.length - 1}" style="border:1px solid #cbd5e1; padding:5px; color:#0369a1;">${escapeHtml(sec.name)}</td>
             </tr>
           `;
         }
         (sec.items || []).forEach((it, iIdx) => {
-          rowsHTML += `
-            <tr>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${sec.name ? String.fromCharCode(97 + iIdx) : (iIdx + 1)}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.hsn || '9403')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
-              <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
-            </tr>
-          `;
+          rowsHTML += bodyRow(cols, it, sec.name ? String.fromCharCode(97 + iIdx) : (iIdx + 1));
         });
         if (sec.subtotal) {
-          rowsHTML += `
-            <tr style="background:#fafafa; font-weight:600; font-size:10.5px;">
-              <td colspan="6" style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right;">Section Subtotal:</td>
-              <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:700;">₹${fmt(sec.subtotal)}</td>
-            </tr>
-          `;
+          rowsHTML += spanRow(cols, 'amount', 'background:#fafafa; font-weight:600; font-size:10.5px;',
+            'border:1px solid #cbd5e1; padding:4px 6px; text-align:right;', 'Section Subtotal:',
+            'border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:700;', `₹${fmt(sec.subtotal)}`);
         }
       });
     } else {
       (payload.items || []).forEach((it, idx) => {
-        rowsHTML += `
-          <tr>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${idx + 1}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.hsn || '9403')}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
-          </tr>
-        `;
+        rowsHTML += bodyRow(cols, it, idx + 1);
       });
     }
     tableHTML = `
       <table style="width:100%; border-collapse:collapse; margin:12px 0; font-size:11px; text-align:left;">
-        <thead>
-          <tr style="background:#d6e9f8; color:#0f172a;">
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:45px;">Sr. No.</th>
-            <th style="border:1px solid #94a3b8; padding:6px;">Particulars</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">HSN/SAC</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">Qty</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:50px;">UOM</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:75px;">Rate (₹)</th>
-            <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:90px;">Amount (₹)</th>
-          </tr>
+        <thead>${headRow(cols)}
         </thead>
         <tbody>
           ${rowsHTML}
-          <tr>
-            <td colspan="6" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; font-weight:600;">Sub-Total:</td>
-            <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; font-weight:600;">₹${fmt(payload.sub_total)}</td>
-          </tr>
-          <tr>
-            <td colspan="6" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">Add: GST @ ${payload.gst_pct}%:</td>
-            <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">₹${fmt(payload.gst_amt)}</td>
-          </tr>
-          <tr style="background:#f8fafc; font-size:12px;">
-            <td colspan="6" style="border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;">GRAND TOTAL:</td>
-            <td style="border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;">₹${fmt(payload.grand_total)}</td>
-          </tr>
+          ${spanRow(cols, 'amount', '',
+            'border:1px solid #cbd5e1; padding:5px 8px; text-align:right; font-weight:600;', 'Sub-Total:',
+            'border:1px solid #cbd5e1; padding:5px 8px; text-align:right; font-weight:600;', `₹${fmt(payload.sub_total)}`)}
+          ${spanRow(cols, 'amount', '',
+            'border:1px solid #cbd5e1; padding:5px 8px; text-align:right;', `Add: GST @ ${payload.gst_pct}%:`,
+            'border:1px solid #cbd5e1; padding:5px 8px; text-align:right;', `₹${fmt(payload.gst_amt)}`)}
+          ${spanRow(cols, 'amount', 'background:#f8fafc; font-size:12px;',
+            'border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;', 'GRAND TOTAL:',
+            'border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;', `₹${fmt(payload.grand_total)}`)}
         </tbody>
       </table>
     `;
@@ -2160,85 +2279,62 @@ function buildDocumentPrintHTML(docType, payload) {
     let sectionsHTML = '';
     (payload.sections || []).forEach((sec, sIdx) => {
       const hasRooms = !!sec.has_rooms;
-      const colCount = hasRooms ? 7 : 6;
+      const base = [
+        { id: 'sr', label: 'Sr. No.', align: 'center', width: 45 },
+        { id: 'part', label: 'Particulars', value: it => escapeHtml(it.particulars || '') },
+        { id: 'qty', label: 'Qty/Area', align: 'center', width: 65, value: it => it.qty ?? '' },
+        { id: 'uom', label: 'UOM', align: 'center', width: 55, value: it => escapeHtml(it.uom || 'nos') },
+        { id: 'rate', label: 'Rate (₹)', align: 'right', width: 75, value: it => fmt(it.rate) },
+      ];
+      if (hasRooms) base.push({ id: 'rooms', label: 'Rooms', align: 'center', width: 65, value: it => it.rooms ?? '-' });
+      base.push({ id: 'amount', label: 'Amount (₹)', align: 'right', width: 95, bold: true, value: it => fmt(it.amount) });
+      const cols = printCols(base);
       let rows = '';
 
       if (sec.name) {
         rows += `
           <tr style="background:#f1f5f9; font-weight:700;">
             <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${sIdx + 1}</td>
-            <td colspan="${colCount - 1}" style="border:1px solid #cbd5e1; padding:5px; color:#0369a1;">${escapeHtml(sec.name)}</td>
+            <td colspan="${cols.length - 1}" style="border:1px solid #cbd5e1; padding:5px; color:#0369a1;">${escapeHtml(sec.name)}</td>
           </tr>
         `;
       }
 
       (sec.items || []).forEach((it, iIdx) => {
-        const itemNumber = sec.name ? String.fromCharCode(97 + iIdx) : (iIdx + 1);
-        rows += `
-          <tr>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${itemNumber}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px;">${escapeHtml(it.particulars || '')}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.qty ?? ''}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${escapeHtml(it.uom || 'nos')}</td>
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:right;">${fmt(it.rate)}</td>
-            ${hasRooms ? `<td style="border:1px solid #cbd5e1; padding:5px; text-align:center;">${it.rooms ?? '-'}</td>` : ''}
-            <td style="border:1px solid #cbd5e1; padding:5px; text-align:right; font-weight:600;">${fmt(it.amount)}</td>
-          </tr>
-        `;
+        rows += bodyRow(cols, it, sec.name ? String.fromCharCode(97 + iIdx) : (iIdx + 1));
       });
 
       if (sec.name && sec.items && sec.items.length > 0) {
         const totalRatePerRoom = sec.items.reduce((sum, it) => sum + (Number(it.rate) || 0), 0);
-        rows += `
-          <tr style="background:#f8fafc; font-size:10.5px; font-weight:600;">
-            <td colspan="4" style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right;">Total Rate per Room:</td>
-            <td style="border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:700;">₹${fmt(totalRatePerRoom)}</td>
-            <td colspan="${hasRooms ? 2 : 1}" style="border:1px solid #cbd5e1;"></td>
-          </tr>
-        `;
+        rows += spanRow(cols, 'rate', 'background:#f8fafc; font-size:10.5px; font-weight:600;',
+          'border:1px solid #cbd5e1; padding:4px 6px; text-align:right;', 'Total Rate per Room:',
+          'border:1px solid #cbd5e1; padding:4px 6px; text-align:right; font-weight:700;', `₹${fmt(totalRatePerRoom)}`);
       }
 
-      rows += `
-        <tr style="background:#fafafa; font-weight:700; font-size:11px;">
-          <td colspan="${colCount - 1}" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">Sub-Total:</td>
-          <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; color:#0f172a;">₹${fmt(sec.subtotal)}</td>
-        </tr>
-      `;
+      rows += spanRow(cols, 'amount', 'background:#fafafa; font-weight:700; font-size:11px;',
+        'border:1px solid #cbd5e1; padding:5px 8px; text-align:right;', 'Sub-Total:',
+        'border:1px solid #cbd5e1; padding:5px 8px; text-align:right; color:#0f172a;', `₹${fmt(sec.subtotal)}`);
 
       if (sIdx === (payload.sections || []).length - 1) {
-        rows += `
-          <tr style="font-weight:600; font-size:11px;">
-            <td colspan="${colCount - 1}" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">Project Total (before GST):</td>
-            <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; font-weight:600; color:#0f172a;">₹${fmt(payload.project_total)}</td>
-          </tr>
-          <tr style="font-size:11px;">
-            <td colspan="${colCount - 1}" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">Add: GST @ ${payload.gst_pct}%:</td>
-            <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; color:#0f172a;">₹${fmt(payload.gst_amt)}</td>
-          </tr>
-          ${payload.round_off ? `
-          <tr style="font-size:11px;">
-            <td colspan="${colCount - 1}" style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right;">Round off:</td>
-            <td style="border:1px solid #cbd5e1; padding:5px 8px; text-align:right; color:#0f172a;">₹${fmt(Math.abs(payload.round_off))}</td>
-          </tr>` : ''}
-          <tr style="background:#f8fafc; font-size:12px;">
-            <td colspan="${colCount - 1}" style="border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;">GRAND TOTAL:</td>
-            <td style="border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;">₹${fmt(payload.grand_total)}</td>
-          </tr>
-        `;
+        rows += spanRow(cols, 'amount', 'font-weight:600; font-size:11px;',
+          'border:1px solid #cbd5e1; padding:5px 8px; text-align:right;', 'Project Total (before GST):',
+          'border:1px solid #cbd5e1; padding:5px 8px; text-align:right; font-weight:600; color:#0f172a;', `₹${fmt(payload.project_total)}`);
+        rows += spanRow(cols, 'amount', 'font-size:11px;',
+          'border:1px solid #cbd5e1; padding:5px 8px; text-align:right;', `Add: GST @ ${payload.gst_pct}%:`,
+          'border:1px solid #cbd5e1; padding:5px 8px; text-align:right; color:#0f172a;', `₹${fmt(payload.gst_amt)}`);
+        if (payload.round_off) {
+          rows += spanRow(cols, 'amount', 'font-size:11px;',
+            'border:1px solid #cbd5e1; padding:5px 8px; text-align:right;', 'Round off:',
+            'border:1px solid #cbd5e1; padding:5px 8px; text-align:right; color:#0f172a;', `₹${fmt(Math.abs(payload.round_off))}`);
+        }
+        rows += spanRow(cols, 'amount', 'background:#f8fafc; font-size:12px;',
+          'border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;', 'GRAND TOTAL:',
+          'border:1px solid #94a3b8; padding:7px 8px; text-align:right; font-weight:800; color:#0f172a;', `₹${fmt(payload.grand_total)}`);
       }
 
       sectionsHTML += `
         <table style="width:100%; border-collapse:collapse; margin:10px 0; font-size:11px; text-align:left;">
-          <thead>
-            <tr style="background:#d6e9f8; color:#0f172a;">
-              <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:45px;">Sr. No.</th>
-              <th style="border:1px solid #94a3b8; padding:6px;">Particulars</th>
-              <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">Qty/Area</th>
-              <th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:55px;">UOM</th>
-              <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:75px;">Rate (₹)</th>
-              ${hasRooms ? `<th style="border:1px solid #94a3b8; padding:6px; text-align:center; width:65px;">Rooms</th>` : ''}
-              <th style="border:1px solid #94a3b8; padding:6px; text-align:right; width:95px;">Amount (₹)</th>
-            </tr>
+          <thead>${headRow(cols)}
           </thead>
           <tbody>
             ${rows}
@@ -2974,8 +3070,8 @@ function renderPISectionTable(sid) {
   const hasRooms = div.querySelector('.pi-sec-rooms').checked;
   const thead = div.querySelector(':scope > table.pi-items-table > thead');
   thead.innerHTML = hasRooms
-    ? `<tr><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th>${extraColsHeaderHtml('pi')}<th>Amount</th><th></th></tr>`
-    : `<tr><th>Particulars</th><th>Qty</th><th>UOM</th><th>Rate</th>${extraColsHeaderHtml('pi')}<th>Amount</th><th></th></tr>`;
+    ? `<tr><th data-col="part">Particulars</th><th data-col="qty">Qty/Area</th><th data-col="uom">UOM</th><th data-col="rate">Rate</th><th data-col="rooms">No. of Rooms</th>${extraColsHeaderHtml('pi')}<th data-col="amount">Amount</th><th></th></tr>`
+    : `<tr><th data-col="part">Particulars</th><th data-col="qty">Qty</th><th data-col="uom">UOM</th><th data-col="rate">Rate</th>${extraColsHeaderHtml('pi')}<th data-col="amount">Amount</th><th></th></tr>`;
   div.querySelectorAll(':scope > table.pi-items-table > tbody > tr').forEach(tr => rebuildPIRow(tr, hasRooms, 'recalcPI'));
   recalcPI();
 }
@@ -3186,8 +3282,8 @@ function renderINVSectionTable(sid) {
   const hasRooms = div.querySelector('.inv-sec-rooms').checked;
   const thead = div.querySelector(':scope > table.pi-items-table > thead');
   thead.innerHTML = hasRooms
-    ? `<tr><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th>${extraColsHeaderHtml('inv')}<th>Amount</th><th></th></tr>`
-    : `<tr><th>Particulars</th><th>Qty</th><th>UOM</th><th>Rate</th>${extraColsHeaderHtml('inv')}<th>Amount</th><th></th></tr>`;
+    ? `<tr><th data-col="part">Particulars</th><th data-col="qty">Qty/Area</th><th data-col="uom">UOM</th><th data-col="rate">Rate</th><th data-col="rooms">No. of Rooms</th>${extraColsHeaderHtml('inv')}<th data-col="amount">Amount</th><th></th></tr>`
+    : `<tr><th data-col="part">Particulars</th><th data-col="qty">Qty</th><th data-col="uom">UOM</th><th data-col="rate">Rate</th>${extraColsHeaderHtml('inv')}<th data-col="amount">Amount</th><th></th></tr>`;
   div.querySelectorAll(':scope > table.pi-items-table > tbody > tr').forEach(tr => rebuildPIRow(tr, hasRooms, 'recalcINV'));
   recalcINV();
 }
@@ -3335,7 +3431,7 @@ function addChallanItemRow(prefill) {
   const idx = tbody.children.length + 1;
   const p = prefill || {};
   tr.innerHTML = `
-    <td>${idx}</td>
+    <td data-col="sr">${idx}</td>
     <td><input class="c-part" value="${escapeHtml(p.particulars || '')}"></td>
     <td><input class="c-length" type="number" value="${p.length ?? ''}" style="width:70px;"></td>
     <td><input class="c-breadth" type="number" value="${p.breadth ?? ''}" style="width:70px;"></td>
@@ -4105,6 +4201,7 @@ checkServerConfigStatus();
 loadCatalogItems();
 loadBuyers();
 loadSites();
+watchExtraColumnOrder();
 addPOSection();
 document.getElementById('gen-podate').valueAsDate = new Date();
 document.getElementById('pi-date').valueAsDate = new Date();
@@ -4120,6 +4217,26 @@ addChallanItemRow();
   setupAutosave(dt);
 });
 </script>
+
+<!-- ADD COLUMN MODAL -->
+<div class="modal-overlay" id="add-column-modal">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="modal-header">
+      <h3>Add Column</h3>
+      <button class="modal-close" onclick="closeAddColumnModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <label for="add-col-name">Column name</label>
+      <input id="add-col-name" placeholder="e.g. Brand, Finish, Remarks" onkeydown="if (event.key === 'Enter') confirmAddColumn()">
+      <label for="add-col-position" style="margin-top:12px;">Where should it go?</label>
+      <select id="add-col-position"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn secondary small" onclick="closeAddColumnModal()">Cancel</button>
+      <button class="btn small" onclick="confirmAddColumn()">Add Column</button>
+    </div>
+  </div>
+</div>
 
 <!-- CATALOG PICKER MODAL -->
 <div class="modal-overlay" id="catalog-modal">
