@@ -19,13 +19,21 @@ function cell(text, opts = {}) {
 
 const addr = payload.issuing_address;
 const totalWidth = 10306;
-const colWidths = [900, 3706, 1200, 1200, 1200, 900, 1200]; // Sr, Particulars, L, B, H, Qty, Unit
+const extraColumns = Array.isArray(payload.extra_columns) ? payload.extra_columns : [];
+const EXTRA_COL_WIDTH = 900;
+const shrink = extraColumns.length * EXTRA_COL_WIDTH;
+const colWidths = [900, Math.max(1600, 3706 - shrink), 1200, 1200, 1200, 900, 1200, ...extraColumns.map(() => EXTRA_COL_WIDTH)]; // Sr, Particulars, L, B, H, Qty, Unit, [extra...]
 
 const headerRow = new TableRow({
-  children: ["S.NO.", "PARTICULARS", "LENGTH (mm)", "BREADTH (mm)", "HEIGHT (mm)", "QTY", "UNIT"].map((h, i) =>
+  children: ["S.NO.", "PARTICULARS", "LENGTH (mm)", "BREADTH (mm)", "HEIGHT (mm)", "QTY", "UNIT", ...extraColumns.map(c => c.label)].map((h, i) =>
     cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
   )
 });
+
+function extraCells(it) {
+  const extraVals = (it && it.extra) || {};
+  return extraColumns.map((c, idx) => cell(extraVals[c.key] ?? "", { width: colWidths[7 + idx], align: AlignmentType.CENTER }));
+}
 
 const itemRows = payload.items.map((it, i) => new TableRow({
   children: [
@@ -36,6 +44,7 @@ const itemRows = payload.items.map((it, i) => new TableRow({
     cell(it.height || "", { width: colWidths[4], align: AlignmentType.CENTER }),
     cell(it.qty || "", { width: colWidths[5], align: AlignmentType.CENTER }),
     cell(it.unit || "", { width: colWidths[6], align: AlignmentType.CENTER }),
+    ...extraCells(it),
   ]
 }));
 
@@ -47,6 +56,11 @@ const totalRow = new TableRow({
     }),
     cell(payload.total_qty, { width: colWidths[5], align: AlignmentType.CENTER, bold: true }),
     cell(payload.unit_label || "PCS / SET", { width: colWidths[6], align: AlignmentType.CENTER, bold: true }),
+    ...(extraColumns.length ? [new TableCell({
+      columnSpan: extraColumns.length,
+      width: { size: extraColumns.reduce((a) => a + EXTRA_COL_WIDTH, 0), type: WidthType.DXA },
+      children: [new Paragraph({ text: "" })]
+    })] : []),
   ]
 });
 
