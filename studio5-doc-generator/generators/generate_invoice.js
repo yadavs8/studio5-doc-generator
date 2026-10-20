@@ -3,6 +3,7 @@ const {
   WidthType, AlignmentType, BorderStyle, ShadingType,
   ImageRun, PageBorderDisplay, PageBorderOffsetFrom, PageBorderZOrder
 } = require("docx");
+const { layoutColumns, spanWidth, blankCells } = require("../lib/columnLayout.js");
 
 async function generateInvoice(payload, logoBuffer, stampBuffer) {
 
@@ -25,131 +26,106 @@ function cell(text, opts = {}) {
 const addr = payload.issuing_address;
 const totalWidth = 10306;
 const extraColumns = Array.isArray(payload.extra_columns) ? payload.extra_columns : [];
-const EXTRA_COL_WIDTH = 900;
 
 // Build section tables
 const sectionBlocks = [];
 payload.sections.forEach((sec, si) => {
   const hasRooms = sec.has_rooms;
-  const shrink = extraColumns.length * EXTRA_COL_WIDTH;
-  const colWidths = hasRooms
-    ? [500, Math.max(1400, 3400 - shrink), 1000, 900, 1000, 1100, ...extraColumns.map(() => EXTRA_COL_WIDTH), 1406]   // Sr, Particulars, Qty/Area, UOM, Rate, No.Rooms, [extra...], Amount
-    : [500, Math.max(1400, 4900 - shrink), 1300, 1000, 1300, ...extraColumns.map(() => EXTRA_COL_WIDTH), 1306];       // Sr, Particulars, Qty, UOM, Rate, [extra...], Amount
-
-  const headers = hasRooms
-    ? ["Sr. No.", "Particulars", "Qty/Area", "UOM", "Rate", "No. of Rooms", ...extraColumns.map(c => c.label), "Amount"]
-    : ["Sr. No.", "Particulars", "Qty", "UOM", "Rate", ...extraColumns.map(c => c.label), "Amount"];
-
-  const amountIdx = colWidths.length - 1;
-  const extraStartIdx = hasRooms ? 6 : 5;
+  const baseCols = hasRooms
+    ? [
+        { id: "sr", label: "Sr. No.", width: 500, align: AlignmentType.CENTER },
+        { id: "part", label: "Particulars", width: 3400, value: it => it.particulars },
+        { id: "qty", label: "Qty/Area", width: 1000, align: AlignmentType.CENTER, value: it => it.qty },
+        { id: "uom", label: "UOM", width: 900, align: AlignmentType.CENTER, value: it => it.uom },
+        { id: "rate", label: "Rate", width: 1000, align: AlignmentType.RIGHT, value: it => fmt(it.rate) },
+        { id: "rooms", label: "No. of Rooms", width: 1100, align: AlignmentType.CENTER, value: it => it.rooms },
+        { id: "amount", label: "Amount", width: 1406, align: AlignmentType.RIGHT, value: it => fmt(it.amount) },
+      ]
+    : [
+        { id: "sr", label: "Sr. No.", width: 500, align: AlignmentType.CENTER },
+        { id: "part", label: "Particulars", width: 4900, value: it => it.particulars },
+        { id: "qty", label: "Qty", width: 1300, align: AlignmentType.CENTER, value: it => it.qty },
+        { id: "uom", label: "UOM", width: 1000, align: AlignmentType.CENTER, value: it => it.uom },
+        { id: "rate", label: "Rate", width: 1300, align: AlignmentType.RIGHT, value: it => fmt(it.rate) },
+        { id: "amount", label: "Amount", width: 1306, align: AlignmentType.RIGHT, value: it => fmt(it.amount) },
+      ];
+  const cols = layoutColumns(baseCols, extraColumns);
+  const colWidths = cols.map(c => c.width);
+  const amountIdx = cols.findIndex(c => c.id === "amount");
+  const rateIdx = cols.findIndex(c => c.id === "rate");
 
   const headerRow = new TableRow({
-    children: headers.map((h, i) => cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER }))
+    children: cols.map(c => cell(c.label, { header: true, bold: true, width: c.width, align: AlignmentType.CENTER }))
   });
 
-  const itemRows = [];
-  const totalCols = headers.length;
-  const fullSpanWidth = colWidths.reduce((a, b) => a + b, 0);
-  const useNamedHeaderMode = !!(sec.name && sec.name.trim());
-
-  function extraCells(it) {
-    const extraVals = (it && it.extra) || {};
-    return extraColumns.map((c, idx) => cell(extraVals[c.key] ?? "", { width: colWidths[extraStartIdx + idx], align: AlignmentType.CENTER }));
+  function itemRow(it, srText) {
+    return new TableRow({
+      children: cols.map(c => cell(c.id === "sr" ? srText : c.value(it), {
+        width: c.width,
+        align: c.extra ? AlignmentType.CENTER : c.align,
+      }))
+    });
   }
 
+  const itemRows = [];
+  const useNamedHeaderMode = !!(sec.name && sec.name.trim());
+
   if (useNamedHeaderMode) {
-    const remainingWidth = fullSpanWidth - colWidths[0];
+    // Row "1" = the section name itself, spanning the full width (bold)
     itemRows.push(new TableRow({
       children: [
         cell(1, { width: colWidths[0], align: AlignmentType.CENTER }),
         new TableCell({
-          columnSpan: totalCols - 1,
-          width: { size: remainingWidth, type: WidthType.DXA },
+          columnSpan: cols.length - 1,
+          width: { size: spanWidth(cols, 1), type: WidthType.DXA },
           children: [new Paragraph({ children: [new TextRun({ text: sec.name, bold: true, size: 20 })] })]
         }),
       ]
     }));
-    sec.items.forEach((it, i) => {
-      const letter = String.fromCharCode(97 + i);
-      const cells = [
-        cell(letter, { width: colWidths[0], align: AlignmentType.CENTER }),
-        cell(it.particulars, { width: colWidths[1] }),
-        cell(it.qty, { width: colWidths[2], align: AlignmentType.CENTER }),
-        cell(it.uom, { width: colWidths[3], align: AlignmentType.CENTER }),
-        cell(fmt(it.rate), { width: colWidths[4], align: AlignmentType.RIGHT }),
-      ];
-      if (hasRooms) cells.push(cell(it.rooms, { width: colWidths[5], align: AlignmentType.CENTER }));
-      cells.push(...extraCells(it));
-      cells.push(cell(fmt(it.amount), { width: colWidths[amountIdx], align: AlignmentType.RIGHT }));
-      itemRows.push(new TableRow({ children: cells }));
-    });
+    // Items become lettered sub-rows: a, b, c, d...
+    sec.items.forEach((it, i) => itemRows.push(itemRow(it, String.fromCharCode(97 + i))));
+    // Total Rate per Room row (sum of the lettered items' rates)
     const totalRate = sec.items.reduce((sum, it) => sum + (Number(it.rate) || 0), 0);
-    const preRateWidth = colWidths.slice(0, 4).reduce((a, b) => a + b, 0);
-    const trailingWidth = colWidths.slice(5).reduce((a, b) => a + b, 0);
-    const trailingSpan = colWidths.length - 5;
     itemRows.push(new TableRow({
       children: [
         new TableCell({
-          columnSpan: 4, width: { size: preRateWidth, type: WidthType.DXA },
+          columnSpan: rateIdx, width: { size: spanWidth(cols, 0, rateIdx), type: WidthType.DXA },
           children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Total Rate per Room", bold: true, size: 20 })] })]
         }),
-        cell(fmt(totalRate), { width: colWidths[4], align: AlignmentType.RIGHT, bold: true }),
-        new TableCell({
-          columnSpan: trailingSpan, width: { size: trailingWidth, type: WidthType.DXA },
-          children: [new Paragraph({ text: "" })]
-        }),
+        cell(fmt(totalRate), { width: colWidths[rateIdx], align: AlignmentType.RIGHT, bold: true }),
+        ...blankCells(cols, rateIdx + 1),
       ]
     }));
   } else {
-    sec.items.forEach((it, i) => {
-      const cells = [
-        cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
-        cell(it.particulars, { width: colWidths[1] }),
-        cell(it.qty, { width: colWidths[2], align: AlignmentType.CENTER }),
-        cell(it.uom, { width: colWidths[3], align: AlignmentType.CENTER }),
-        cell(fmt(it.rate), { width: colWidths[4], align: AlignmentType.RIGHT }),
-      ];
-      if (hasRooms) cells.push(cell(it.rooms, { width: colWidths[5], align: AlignmentType.CENTER }));
-      cells.push(...extraCells(it));
-      cells.push(cell(fmt(it.amount), { width: colWidths[amountIdx], align: AlignmentType.RIGHT }));
-      itemRows.push(new TableRow({ children: cells }));
+    // No section name — plain flat numbering, no header row, no Total Rate row
+    sec.items.forEach((it, i) => itemRows.push(itemRow(it, i + 1)));
+  }
+
+  function makeTotalRow(label, value, bold = false, size) {
+    return new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: amountIdx,
+          width: { size: spanWidth(cols, 0, amountIdx), type: WidthType.DXA },
+          children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: label, bold, size })] })]
+        }),
+        cell(fmt(value), { width: colWidths[amountIdx], align: AlignmentType.RIGHT, bold }),
+        ...blankCells(cols, amountIdx + 1),
+      ]
     });
   }
 
-  const totalSpan = amountIdx;
-  const totalRow = new TableRow({
-    children: [
-      new TableCell({
-        columnSpan: totalSpan, width: { size: colWidths.slice(0, totalSpan).reduce((a,b)=>a+b,0), type: WidthType.DXA },
-        children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Sub-Total", bold: true })] })]
-      }),
-      cell(fmt(sec.subtotal), { width: colWidths[amountIdx], align: AlignmentType.RIGHT, bold: true })
-    ]
-  });
+  const totalRow = makeTotalRow("Sub-Total", sec.subtotal, true);
 
   const isLastSection = si === payload.sections.length - 1;
   const attachedTotals = [];
   if (isLastSection) {
-    function makeTotalRow(label, value, bold = false) {
-      const labelWidth = colWidths.slice(0, totalSpan).reduce((a, b) => a + b, 0);
-      const valWidth = colWidths[amountIdx];
-      return new TableRow({
-        children: [
-          new TableCell({
-            columnSpan: totalSpan,
-            width: { size: labelWidth, type: WidthType.DXA },
-            children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: label, bold, size: 20 })] })]
-          }),
-          cell(fmt(value), { width: valWidth, align: AlignmentType.RIGHT, bold })
-        ]
-      });
-    }
-    attachedTotals.push(makeTotalRow("Project Total (before GST)", payload.project_total, true));
-    attachedTotals.push(makeTotalRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false));
+    attachedTotals.push(makeTotalRow("Project Total (before GST)", payload.project_total, true, 20));
+    attachedTotals.push(makeTotalRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false, 20));
     if (payload.round_off) {
-      attachedTotals.push(makeTotalRow("Round off", Math.abs(payload.round_off), false));
+      attachedTotals.push(makeTotalRow("Round off", Math.abs(payload.round_off), false, 20));
     }
-    attachedTotals.push(makeTotalRow("GRAND TOTAL", payload.grand_total, true));
+    attachedTotals.push(makeTotalRow("GRAND TOTAL", payload.grand_total, true, 20));
   }
 
   sectionBlocks.push(new Table({

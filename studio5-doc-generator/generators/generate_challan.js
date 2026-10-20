@@ -2,6 +2,7 @@ const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   WidthType, AlignmentType, BorderStyle, ShadingType, ImageRun
 } = require("docx");
+const { layoutColumns, spanWidth } = require("../lib/columnLayout.js");
 
 async function generateChallan(payload, logoBuffer, stampBuffer) {
 
@@ -19,48 +20,40 @@ function cell(text, opts = {}) {
 
 const addr = payload.issuing_address;
 const totalWidth = 10306;
-const extraColumns = Array.isArray(payload.extra_columns) ? payload.extra_columns : [];
-const EXTRA_COL_WIDTH = 900;
-const shrink = extraColumns.length * EXTRA_COL_WIDTH;
-const colWidths = [900, Math.max(1600, 3706 - shrink), 1200, 1200, 1200, 900, 1200, ...extraColumns.map(() => EXTRA_COL_WIDTH)]; // Sr, Particulars, L, B, H, Qty, Unit, [extra...]
+const cols = layoutColumns([
+  { id: "sr", label: "S.NO.", width: 900, align: AlignmentType.CENTER },
+  { id: "part", label: "PARTICULARS", width: 3706, value: it => it.particulars },
+  { id: "length", label: "LENGTH (mm)", width: 1200, align: AlignmentType.CENTER, value: it => it.length || "" },
+  { id: "breadth", label: "BREADTH (mm)", width: 1200, align: AlignmentType.CENTER, value: it => it.breadth || "" },
+  { id: "height", label: "HEIGHT (mm)", width: 1200, align: AlignmentType.CENTER, value: it => it.height || "" },
+  { id: "qty", label: "QTY", width: 900, align: AlignmentType.CENTER, value: it => it.qty || "" },
+  { id: "unit", label: "UNIT", width: 1200, align: AlignmentType.CENTER, value: it => it.unit || "" },
+], payload.extra_columns, { minWidth: 1600 });
+const colWidths = cols.map(c => c.width);
+const qtyIdx = cols.findIndex(c => c.id === "qty");
 
 const headerRow = new TableRow({
-  children: ["S.NO.", "PARTICULARS", "LENGTH (mm)", "BREADTH (mm)", "HEIGHT (mm)", "QTY", "UNIT", ...extraColumns.map(c => c.label)].map((h, i) =>
-    cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
-  )
+  children: cols.map(c => cell(c.label, { header: true, bold: true, width: c.width, align: AlignmentType.CENTER }))
 });
 
-function extraCells(it) {
-  const extraVals = (it && it.extra) || {};
-  return extraColumns.map((c, idx) => cell(extraVals[c.key] ?? "", { width: colWidths[7 + idx], align: AlignmentType.CENTER }));
-}
-
 const itemRows = payload.items.map((it, i) => new TableRow({
-  children: [
-    cell(i + 1, { width: colWidths[0], align: AlignmentType.CENTER }),
-    cell(it.particulars, { width: colWidths[1] }),
-    cell(it.length || "", { width: colWidths[2], align: AlignmentType.CENTER }),
-    cell(it.breadth || "", { width: colWidths[3], align: AlignmentType.CENTER }),
-    cell(it.height || "", { width: colWidths[4], align: AlignmentType.CENTER }),
-    cell(it.qty || "", { width: colWidths[5], align: AlignmentType.CENTER }),
-    cell(it.unit || "", { width: colWidths[6], align: AlignmentType.CENTER }),
-    ...extraCells(it),
-  ]
+  children: cols.map(c => cell(c.id === "sr" ? i + 1 : c.value(it), {
+    width: c.width,
+    align: c.extra ? AlignmentType.CENTER : c.align,
+  }))
 }));
 
 const totalRow = new TableRow({
   children: [
     new TableCell({
-      columnSpan: 5, width: { size: colWidths.slice(0,5).reduce((a,b)=>a+b,0), type: WidthType.DXA },
+      columnSpan: qtyIdx, width: { size: spanWidth(cols, 0, qtyIdx), type: WidthType.DXA },
       children: [new Paragraph({ children: [new TextRun({ text: "TOTAL QUANTITY", bold: true })] })]
     }),
-    cell(payload.total_qty, { width: colWidths[5], align: AlignmentType.CENTER, bold: true }),
-    cell(payload.unit_label || "PCS / SET", { width: colWidths[6], align: AlignmentType.CENTER, bold: true }),
-    ...(extraColumns.length ? [new TableCell({
-      columnSpan: extraColumns.length,
-      width: { size: extraColumns.reduce((a) => a + EXTRA_COL_WIDTH, 0), type: WidthType.DXA },
-      children: [new Paragraph({ text: "" })]
-    })] : []),
+    ...cols.slice(qtyIdx).map(c => {
+      if (c.id === "qty") return cell(payload.total_qty, { width: c.width, align: AlignmentType.CENTER, bold: true });
+      if (c.id === "unit") return cell(payload.unit_label || "PCS / SET", { width: c.width, align: AlignmentType.CENTER, bold: true });
+      return cell("", { width: c.width });
+    }),
   ]
 });
 
