@@ -24,27 +24,38 @@ function cell(text, opts = {}) {
 
 const addr = payload.issuing_address;
 const totalWidth = 10306;
+const extraColumns = Array.isArray(payload.extra_columns) ? payload.extra_columns : [];
+const EXTRA_COL_WIDTH = 900;
 
 // Build section tables
 const sectionBlocks = [];
 payload.sections.forEach((sec, si) => {
   const hasRooms = sec.has_rooms;
+  const shrink = extraColumns.length * EXTRA_COL_WIDTH;
   const colWidths = hasRooms
-    ? [500, 3400, 1000, 900, 1000, 1100, 1406]   // Sr, Particulars, Qty/Area, UOM, Rate, No.Rooms, Amount
-    : [500, 4900, 1300, 1000, 1300, 1306];       // Sr, Particulars, Qty, UOM, Rate, Amount
+    ? [500, Math.max(1400, 3400 - shrink), 1000, 900, 1000, 1100, ...extraColumns.map(() => EXTRA_COL_WIDTH), 1406]   // Sr, Particulars, Qty/Area, UOM, Rate, No.Rooms, [extra...], Amount
+    : [500, Math.max(1400, 4900 - shrink), 1300, 1000, 1300, ...extraColumns.map(() => EXTRA_COL_WIDTH), 1306];       // Sr, Particulars, Qty, UOM, Rate, [extra...], Amount
 
   const headers = hasRooms
-    ? ["Sr. No.", "Particulars", "Qty/Area", "UOM", "Rate", "No. of Rooms", "Amount"]
-    : ["Sr. No.", "Particulars", "Qty", "UOM", "Rate", "Amount"];
+    ? ["Sr. No.", "Particulars", "Qty/Area", "UOM", "Rate", "No. of Rooms", ...extraColumns.map(c => c.label), "Amount"]
+    : ["Sr. No.", "Particulars", "Qty", "UOM", "Rate", ...extraColumns.map(c => c.label), "Amount"];
+
+  const amountIdx = colWidths.length - 1;
+  const extraStartIdx = hasRooms ? 6 : 5;
 
   const headerRow = new TableRow({
     children: headers.map((h, i) => cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER }))
   });
 
   const itemRows = [];
-  const totalCols = hasRooms ? 7 : 6;
+  const totalCols = headers.length;
   const fullSpanWidth = colWidths.reduce((a, b) => a + b, 0);
   const useNamedHeaderMode = !!(sec.name && sec.name.trim());
+
+  function extraCells(it) {
+    const extraVals = (it && it.extra) || {};
+    return extraColumns.map((c, idx) => cell(extraVals[c.key] ?? "", { width: colWidths[extraStartIdx + idx], align: AlignmentType.CENTER }));
+  }
 
   if (useNamedHeaderMode) {
     const remainingWidth = fullSpanWidth - colWidths[0];
@@ -68,12 +79,14 @@ payload.sections.forEach((sec, si) => {
         cell(fmt(it.rate), { width: colWidths[4], align: AlignmentType.RIGHT }),
       ];
       if (hasRooms) cells.push(cell(it.rooms, { width: colWidths[5], align: AlignmentType.CENTER }));
-      cells.push(cell(fmt(it.amount), { width: colWidths[hasRooms ? 6 : 5], align: AlignmentType.RIGHT }));
+      cells.push(...extraCells(it));
+      cells.push(cell(fmt(it.amount), { width: colWidths[amountIdx], align: AlignmentType.RIGHT }));
       itemRows.push(new TableRow({ children: cells }));
     });
     const totalRate = sec.items.reduce((sum, it) => sum + (Number(it.rate) || 0), 0);
     const preRateWidth = colWidths.slice(0, 4).reduce((a, b) => a + b, 0);
-    const trailingWidth = hasRooms ? colWidths[5] + colWidths[6] : colWidths[5];
+    const trailingWidth = colWidths.slice(5).reduce((a, b) => a + b, 0);
+    const trailingSpan = colWidths.length - 5;
     itemRows.push(new TableRow({
       children: [
         new TableCell({
@@ -82,7 +95,7 @@ payload.sections.forEach((sec, si) => {
         }),
         cell(fmt(totalRate), { width: colWidths[4], align: AlignmentType.RIGHT, bold: true }),
         new TableCell({
-          columnSpan: hasRooms ? 2 : 1, width: { size: trailingWidth, type: WidthType.DXA },
+          columnSpan: trailingSpan, width: { size: trailingWidth, type: WidthType.DXA },
           children: [new Paragraph({ text: "" })]
         }),
       ]
@@ -97,19 +110,20 @@ payload.sections.forEach((sec, si) => {
         cell(fmt(it.rate), { width: colWidths[4], align: AlignmentType.RIGHT }),
       ];
       if (hasRooms) cells.push(cell(it.rooms, { width: colWidths[5], align: AlignmentType.CENTER }));
-      cells.push(cell(fmt(it.amount), { width: colWidths[hasRooms ? 6 : 5], align: AlignmentType.RIGHT }));
+      cells.push(...extraCells(it));
+      cells.push(cell(fmt(it.amount), { width: colWidths[amountIdx], align: AlignmentType.RIGHT }));
       itemRows.push(new TableRow({ children: cells }));
     });
   }
 
-  const totalSpan = hasRooms ? 6 : 5;
+  const totalSpan = amountIdx;
   const totalRow = new TableRow({
     children: [
       new TableCell({
         columnSpan: totalSpan, width: { size: colWidths.slice(0, totalSpan).reduce((a,b)=>a+b,0), type: WidthType.DXA },
         children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Sub-Total", bold: true })] })]
       }),
-      cell(fmt(sec.subtotal), { width: colWidths[hasRooms ? 6 : 5], align: AlignmentType.RIGHT, bold: true })
+      cell(fmt(sec.subtotal), { width: colWidths[amountIdx], align: AlignmentType.RIGHT, bold: true })
     ]
   });
 
@@ -118,7 +132,7 @@ payload.sections.forEach((sec, si) => {
   if (isLastSection) {
     function makeTotalRow(label, value, bold = false) {
       const labelWidth = colWidths.slice(0, totalSpan).reduce((a, b) => a + b, 0);
-      const valWidth = colWidths[hasRooms ? 6 : 5];
+      const valWidth = colWidths[amountIdx];
       return new TableRow({
         children: [
           new TableCell({

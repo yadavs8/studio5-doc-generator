@@ -89,35 +89,6 @@
   .status { font-size: 12px; color: var(--good); margin-left: 10px; }
   .item-actions { text-align: center; width: 85px; white-space: nowrap; }
   .remove-row { color: #b0413e; cursor: pointer; font-weight: 700; margin-left: 2px; }
-  .mic-btn {
-    display: inline-block; cursor: pointer; font-size: 14px; margin-right: 6px;
-    padding: 2px 4px; border-radius: 4px; border: 1px solid transparent;
-    transition: all 0.2s ease; user-select: none; vertical-align: middle;
-  }
-  .mic-btn:hover { background: rgba(0,0,0,0.06); border-color: #cbd5e1; }
-  .mic-btn.recording {
-    background: #fee2e2; border-color: #ef4444;
-    animation: pulse-mic 1.2s infinite ease-in-out;
-  }
-  .mic-btn.processing {
-    background: #fef3c7; border-color: #f59e0b;
-    cursor: wait;
-  }
-  @keyframes pulse-mic {
-    0% { transform: scale(1); filter: drop-shadow(0 0 1px #ef4444); }
-    50% { transform: scale(1.25); filter: drop-shadow(0 0 5px #ef4444); }
-    100% { transform: scale(1); filter: drop-shadow(0 0 1px #ef4444); }
-  }
-  .row-recording { background-color: #fff1f2 !important; transition: background-color 0.2s; }
-  .row-processing { background-color: #fefce8 !important; opacity: 0.85; transition: background-color 0.2s; }
-  .mic-party-btn.recording {
-    background: #fee2e2 !important; border-color: #ef4444 !important; color: #b91c1c !important;
-    animation: pulse-mic 1.2s infinite ease-in-out;
-  }
-  .mic-party-btn.processing {
-    background: #fef3c7 !important; border-color: #f59e0b !important; color: #92400e !important;
-    cursor: wait;
-  }
   .lib-actions { display: flex; gap: 8px; margin-top: 10px; }
   .terms-preview { max-height: 160px; overflow-y: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: #fafafa; }
   .terms-preview p { margin: 4px 0; }
@@ -280,25 +251,6 @@
     </div>
 
     <div class="card">
-      <h2>🎙️ Smart Mic Dictation AI Keys (OpenAI &amp; Anthropic)</h2>
-      <p style="font-size:13px; color:var(--muted); margin-top:0;">Powers the <strong>🎙️ Smart Mic Dictation</strong> on item rows. Uses <strong>OpenAI Whisper</strong> (Hindi/Hinglish speech-to-text) and <strong>Anthropic Claude 3.5 Sonnet</strong> (Chief Estimator parsing). Keys can also be set via <code>OPENAI_API_KEY</code> and <code>ANTHROPIC_API_KEY</code> environment variables.</p>
-      <div class="row2">
-        <div>
-          <label>OpenAI API Key (for Whisper speech-to-text)</label>
-          <input id="openai-api-key" type="password" placeholder="sk-proj-...">
-        </div>
-        <div>
-          <label>Anthropic API Key (for Claude 3.5 Sonnet estimation)</label>
-          <input id="anthropic-api-key" type="password" placeholder="sk-ant-...">
-        </div>
-      </div>
-      <div class="lib-actions">
-        <button class="btn small" onclick="saveDictationKeys()">Save Keys</button>
-      </div>
-      <span class="status" id="dictation-keys-status"></span>
-    </div>
-
-    <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">📦 Interior Items Catalog (Quick-Pick &amp; Autocomplete)</h2>
         <div style="display:flex; gap:8px;">
@@ -386,7 +338,6 @@
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">2. Vendor / Supplier Details</h2>
-        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-po-vendor" onclick="togglePartyVoiceDictation('po-vendor')" style="font-weight:600;">🎙️ Voice Fill Vendor</button>
       </div>
       <div class="row2" style="margin-top:8px;">
         <div><label>Vendor Name</label><input id="gen-vendor-name"></div>
@@ -407,7 +358,6 @@
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">3. Deliver To (Site Address)</h2>
-        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-po-site" onclick="togglePartyVoiceDictation('po-site')" style="font-weight:600;">🎙️ Voice Fill Site</button>
       </div>
       <label style="margin-top:8px;">Select a saved client / project site</label>
       <select id="gen-site-select" onchange="applyPartySelection('po-site')"></select>
@@ -473,7 +423,6 @@
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">2. Buyer's Details</h2>
-        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-pi-buyer" onclick="togglePartyVoiceDictation('pi-buyer')" style="font-weight:600;">🎙️ Voice Fill Details</button>
       </div>
       <label style="margin-top:8px;">Select a saved client / buyer / site</label>
       <select id="pi-buyer-select" onchange="applyPartySelection('pi')"></select>
@@ -558,7 +507,6 @@
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">2. Buyer's Details</h2>
-        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-inv-buyer" onclick="togglePartyVoiceDictation('inv-buyer')" style="font-weight:600;">🎙️ Voice Fill Details</button>
       </div>
       <label style="margin-top:8px;">Select a saved client / buyer / site</label>
       <select id="inv-buyer-select" onchange="applyPartySelection('inv')"></select>
@@ -640,7 +588,6 @@
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">2. Receiver Details</h2>
-        <button type="button" class="btn secondary small mic-party-btn" id="mic-btn-challan-site" onclick="togglePartyVoiceDictation('challan-site')" style="font-weight:600;">🎙️ Voice Fill Details</button>
       </div>
       <label style="margin-top:8px;">Select a saved client or delivery site</label>
       <select id="challan-site-select" onchange="applyPartySelection('challan')"></select>
@@ -678,11 +625,12 @@
           <button type="button" class="btn small" style="padding:4px 10px; font-size:11.5px; background:#0284c7; color:#fff;" onclick="copyParticularsIntoChallan()">📥 Import Items</button>
         </div>
       </div>
-      <table>
+      <table id="challan-items-table">
         <thead><tr><th>#</th><th>Particulars</th><th>Length (mm)</th><th>Breadth (mm)</th><th>Height (mm)</th><th>Qty</th><th>Unit</th><th></th></tr></thead>
         <tbody id="challan-items-body"></tbody>
       </table>
       <button class="btn secondary small" onclick="addChallanItemRow()">+ Add row</button>
+      <button type="button" class="btn secondary small" onclick="addExtraColumn('challan')">+ Add Column</button>
       <div class="footer-note">Total Quantity: <span id="challan-total-qty">0</span> <input id="challan-unit-label" value="PCS / SET" style="width:100px; display:inline-block; margin-left:6px;"></div>
     </div>
 
@@ -1288,172 +1236,6 @@ async function saveCurrentAsParty(prefix) {
 function saveCurrentAsBuyer(prefix) { return saveCurrentAsParty(prefix); }
 function saveCurrentAsSite(prefix) { return saveCurrentAsParty(prefix); }
 
-// Voice Party & Address Dictation
-let activePartyMediaRecorder = null;
-let activePartyTargetId = null;
-let partyAudioChunks = [];
-let partyMediaStream = null;
-
-async function togglePartyVoiceDictation(targetId) {
-  if (activePartyMediaRecorder && activePartyTargetId === targetId) {
-    await stopPartyVoiceDictation(targetId);
-  } else {
-    if (activePartyMediaRecorder) {
-      await stopPartyVoiceDictation(activePartyTargetId);
-    }
-    await startPartyVoiceDictation(targetId);
-  }
-}
-
-async function startPartyVoiceDictation(targetId) {
-  const btn = document.getElementById(`mic-btn-${targetId}`);
-  try {
-    partyMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    partyAudioChunks = [];
-    const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
-    let supportedMime = '';
-    for (const m of mimeTypes) {
-      if (MediaRecorder.isTypeSupported(m)) {
-        supportedMime = m;
-        break;
-      }
-    }
-    const options = supportedMime ? { mimeType: supportedMime } : {};
-    activePartyMediaRecorder = new MediaRecorder(partyMediaStream, options);
-    activePartyTargetId = targetId;
-
-    activePartyMediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) partyAudioChunks.push(e.data);
-    };
-
-    activePartyMediaRecorder.start();
-
-    if (btn) {
-      btn.classList.add('recording');
-      btn.innerHTML = '🛑 Stop & Fill';
-      btn.title = 'Recording... Click to parse address';
-    }
-  } catch (err) {
-    console.error("Mic access error:", err);
-    alert("Microphone error: " + (err.message || err.name));
-    cleanupPartyRecordingUI(targetId);
-  }
-}
-
-async function stopPartyVoiceDictation(targetId) {
-  if (!activePartyMediaRecorder || activePartyTargetId !== targetId) return;
-  const btn = document.getElementById(`mic-btn-${targetId}`);
-
-  return new Promise((resolve) => {
-    activePartyMediaRecorder.onstop = async () => {
-      if (partyMediaStream) {
-        partyMediaStream.getTracks().forEach(t => t.stop());
-        partyMediaStream = null;
-      }
-
-      if (btn) {
-        btn.classList.remove('recording');
-        btn.classList.add('processing');
-        btn.innerHTML = '⏳ AI Parsing Address...';
-      }
-
-      try {
-        const mimeType = activePartyMediaRecorder.mimeType || 'audio/webm';
-        const ext = mimeType.includes('mp4') ? 'mp4' : (mimeType.includes('ogg') ? 'ogg' : 'webm');
-        const audioBlob = new Blob(partyAudioChunks, { type: mimeType });
-
-        const formData = new FormData();
-        formData.append('audio', audioBlob, `party-speech-${Date.now()}.${ext}`);
-
-        if (typeof geminiApiKey !== 'undefined' && geminiApiKey) {
-          formData.append('geminiApiKey', geminiApiKey);
-        }
-
-        const effectiveBackend = (typeof backendUrl !== 'undefined' && backendUrl)
-          ? backendUrl
-          : (window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000');
-
-        const headers = {};
-        if (typeof geminiApiKey !== 'undefined' && geminiApiKey) headers['x-gemini-key'] = geminiApiKey;
-
-        const res = await fetch(`${effectiveBackend}/api/parse-party-audio`, {
-          method: 'POST',
-          headers,
-          body: formData
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Server error: ${res.status}`);
-        }
-
-        const data = await res.json();
-        console.log("Party dictation parsed:", data);
-
-        if (data) {
-          if (targetId === 'pi-buyer') {
-            if (data.name) document.getElementById('pi-buyer-name').value = data.name;
-            if (data.address) document.getElementById('pi-buyer-address').value = data.address;
-            if (data.gstin) document.getElementById('pi-buyer-gstin').value = data.gstin;
-            if (data.attn) document.getElementById('pi-buyer-attn').value = data.attn;
-          } else if (targetId === 'inv-buyer') {
-            if (data.name) document.getElementById('inv-buyer-name').value = data.name;
-            if (data.address) document.getElementById('inv-buyer-address').value = data.address;
-            if (data.gstin) document.getElementById('inv-buyer-gstin').value = data.gstin;
-            if (data.attn) document.getElementById('inv-buyer-attn').value = data.attn;
-          } else if (targetId === 'challan-site') {
-            if (data.name) document.getElementById('challan-receiver-name').value = data.name;
-            if (data.address) document.getElementById('challan-site-address').value = data.address;
-          } else if (targetId === 'po-site') {
-            const combined = (data.name ? data.name + '\n' : '') + (data.address || '');
-            if (combined.trim()) document.getElementById('gen-site').value = combined.trim();
-          } else if (targetId === 'po-vendor') {
-            if (data.name) document.getElementById('gen-vendor-name').value = data.name;
-            if (data.address) document.getElementById('gen-vendor-address').value = data.address;
-            if (data.gstin) document.getElementById('gen-vendor-gstin').value = data.gstin;
-            if (data.attn) document.getElementById('gen-vendor-contact').value = data.attn;
-          }
-
-          if (data.name && data.address) {
-            const autoKey = (data.label || data.name).toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
-            if (!parties[autoKey]) {
-              parties[autoKey] = {
-                label: data.label || data.name,
-                name: data.name,
-                address: data.address,
-                gstin: data.gstin || '',
-                attn: data.attn || ''
-              };
-              await localDB.set('studio5_parties', JSON.stringify(parties));
-              renderParties();
-              populatePartyDropdowns();
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Party voice fill error:", err);
-        alert("Voice Fill Error: " + err.message);
-      } finally {
-        cleanupPartyRecordingUI(targetId);
-        activePartyMediaRecorder = null;
-        activePartyTargetId = null;
-        partyAudioChunks = [];
-        resolve();
-      }
-    };
-    activePartyMediaRecorder.stop();
-  });
-}
-
-function cleanupPartyRecordingUI(targetId) {
-  const btn = document.getElementById(`mic-btn-${targetId}`);
-  if (btn) {
-    btn.classList.remove('recording');
-    btn.classList.remove('processing');
-    btn.innerHTML = targetId.includes('site') ? '🎙️ Voice Fill Site' : (targetId.includes('vendor') ? '🎙️ Voice Fill Vendor' : '🎙️ Voice Fill Details');
-  }
-}
-
 function escapeHtml(str) {
   if (str == null) return '';
   return String(str)
@@ -1467,6 +1249,266 @@ function escapeHtml(str) {
 let dictationRowCounter = 0;
 function generateRowId(prefix) {
   return (prefix || 'row') + '_' + Date.now() + '_' + (++dictationRowCounter);
+}
+
+// --- Dynamic extra columns (per document type) ---
+const extraCols = { po: [], pi: [], inv: [], challan: [] };
+
+function extraColsHeaderHtml(docType) {
+  return (extraCols[docType] || []).map(c =>
+    `<th data-extra-col="${c.key}">${escapeHtml(c.label)} <span onclick="removeExtraColumn('${docType}','${c.key}')" title="Remove column" style="cursor:pointer; color:#b0413e; font-weight:700;">✕</span></th>`
+  ).join('');
+}
+
+function extraColsRowHtml(docType, values) {
+  const vals = values || {};
+  return (extraCols[docType] || []).map(c =>
+    `<td data-extra-col="${c.key}"><input class="f-extra" data-extra-key="${c.key}" value="${escapeHtml(vals[c.key] ?? '')}" style="width:70px;"></td>`
+  ).join('');
+}
+
+function getTablesForDocType(docType) {
+  if (docType === 'po') {
+    return Array.from(document.querySelectorAll('#po-sections table.po-items-table')).map(t => ({ theadRow: t.querySelector('thead tr'), tbody: t.querySelector('tbody') }));
+  }
+  if (docType === 'pi') {
+    return Array.from(document.querySelectorAll('#pi-sections table.pi-items-table')).map(t => ({ theadRow: t.querySelector('thead tr'), tbody: t.querySelector('tbody') }));
+  }
+  if (docType === 'inv') {
+    return Array.from(document.querySelectorAll('#inv-sections table.pi-items-table')).map(t => ({ theadRow: t.querySelector('thead tr'), tbody: t.querySelector('tbody') }));
+  }
+  if (docType === 'challan') {
+    const t = document.getElementById('challan-items-table');
+    return t ? [{ theadRow: t.querySelector('thead tr'), tbody: t.querySelector('tbody') }] : [];
+  }
+  return [];
+}
+
+function syncHeaderExtraCols(theadRow, docType) {
+  if (!theadRow) return;
+  const activeKeys = (extraCols[docType] || []).map(c => c.key);
+  Array.from(theadRow.querySelectorAll('th[data-extra-col]')).forEach(th => {
+    if (!activeKeys.includes(th.dataset.extraCol)) th.remove();
+  });
+  let anchorTh = Array.from(theadRow.children).find(th => (th.textContent || '').trim().indexOf('Amount') === 0);
+  if (!anchorTh) {
+    const last = theadRow.children[theadRow.children.length - 1];
+    if (last && !last.hasAttribute('data-extra-col') && (last.textContent || '').trim() === '') anchorTh = last;
+  }
+  (extraCols[docType] || []).forEach(c => {
+    if (theadRow.querySelector(`th[data-extra-col="${c.key}"]`)) return;
+    const th = document.createElement('th');
+    th.dataset.extraCol = c.key;
+    th.innerHTML = `${escapeHtml(c.label)} <span onclick="removeExtraColumn('${docType}','${c.key}')" title="Remove column" style="cursor:pointer; color:#b0413e; font-weight:700;">✕</span>`;
+    if (anchorTh) theadRow.insertBefore(th, anchorTh);
+    else theadRow.appendChild(th);
+  });
+}
+
+function syncRowExtraCols(tr, docType) {
+  const activeKeys = (extraCols[docType] || []).map(c => c.key);
+  Array.from(tr.querySelectorAll('td[data-extra-col]')).forEach(td => {
+    if (!activeKeys.includes(td.dataset.extraCol)) td.remove();
+  });
+  const amtTd = tr.querySelector('.amt-cell, .f-amount') || tr.querySelector('td.item-actions');
+  (extraCols[docType] || []).forEach(c => {
+    if (tr.querySelector(`td[data-extra-col="${c.key}"]`)) return;
+    const td = document.createElement('td');
+    td.dataset.extraCol = c.key;
+    td.innerHTML = `<input class="f-extra" data-extra-key="${c.key}" style="width:70px;">`;
+    if (amtTd) tr.insertBefore(td, amtTd);
+    else tr.appendChild(td);
+  });
+}
+
+function rebuildExtraColumnsForDocType(docType) {
+  getTablesForDocType(docType).forEach(({ theadRow, tbody }) => {
+    syncHeaderExtraCols(theadRow, docType);
+    if (tbody) Array.from(tbody.children).forEach(tr => syncRowExtraCols(tr, docType));
+  });
+}
+
+function addExtraColumn(docType) {
+  const label = (prompt('New column name:') || '').trim();
+  if (!label) return;
+  const key = 'extra_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') + '_' + Date.now().toString(36).slice(-5);
+  extraCols[docType].push({ key, label });
+  rebuildExtraColumnsForDocType(docType);
+}
+
+function removeExtraColumn(docType, key) {
+  extraCols[docType] = (extraCols[docType] || []).filter(c => c.key !== key);
+  rebuildExtraColumnsForDocType(docType);
+}
+
+function getExtraColumnValuesFromRow(row) {
+  const out = {};
+  row.querySelectorAll('input.f-extra[data-extra-key]').forEach(inp => {
+    out[inp.dataset.extraKey] = inp.value || '';
+  });
+  return out;
+}
+
+function buildExtraColumnsPayload(docType) {
+  return (extraCols[docType] || []).map(c => ({ key: c.key, label: c.label }));
+}
+
+// --- Autosave drafts to localStorage (survives accidental reload / backgrounding on phone) ---
+const DRAFT_KEYS = { po: 'studio5_draft_po', pi: 'studio5_draft_pi', inv: 'studio5_draft_invoice', challan: 'studio5_draft_challan' };
+const DRAFT_PANEL_IDS = { po: 'panel-generate', pi: 'panel-generate-pi', inv: 'panel-generate-inv', challan: 'panel-generate-challan' };
+
+function serializeSimpleFields(panelId) {
+  const data = {};
+  try {
+    const panel = document.getElementById(panelId);
+    if (!panel) return data;
+    panel.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+      if (el.classList.contains('f-extra')) return;
+      if (el.type === 'checkbox') data[el.id] = el.checked;
+      else data[el.id] = el.value;
+    });
+  } catch (e) {}
+  return data;
+}
+
+function restoreSimpleFields(panelId, data) {
+  try {
+    if (!data) return;
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    Object.keys(data).forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = data[id];
+      else el.value = data[id];
+    });
+  } catch (e) {}
+}
+
+function captureItemsForDraft(docType) {
+  try {
+    if (docType === 'po') {
+      return Array.from(document.querySelectorAll('#po-sections > .card')).map(div => ({
+        name: div.querySelector('.po-sec-name')?.value || '',
+        items: Array.from(div.querySelectorAll('tbody tr')).map(row => ({
+          particulars: row.querySelector('.f-part')?.value || '',
+          hsn: row.querySelector('.f-hsn')?.value || '',
+          qty: row.querySelector('.f-qty')?.value || '',
+          uom: row.querySelector('.f-uom')?.value || '',
+          rate: row.querySelector('.f-rate')?.value || '',
+          extra: getExtraColumnValuesFromRow(row)
+        }))
+      }));
+    }
+    if (docType === 'pi' || docType === 'inv') {
+      const containerId = docType === 'pi' ? 'pi-sections' : 'inv-sections';
+      const roomsSel = docType === 'pi' ? '.pi-sec-rooms' : '.inv-sec-rooms';
+      const nameSel = docType === 'pi' ? '.pi-sec-name' : '.inv-sec-name';
+      return Array.from(document.querySelectorAll(`#${containerId} > .card`)).map(div => ({
+        name: div.querySelector(nameSel)?.value || '',
+        hasRooms: !!div.querySelector(roomsSel)?.checked,
+        items: Array.from(div.querySelectorAll('tbody tr')).map(row => ({
+          particulars: row.querySelector('.f-part')?.value || '',
+          qty: row.querySelector('.f-qty')?.value || '',
+          uom: row.querySelector('.f-uom')?.value || '',
+          rate: row.querySelector('.f-rate')?.value || '',
+          rooms: row.querySelector('.f-rooms')?.value || '',
+          extra: getExtraColumnValuesFromRow(row)
+        }))
+      }));
+    }
+    if (docType === 'challan') {
+      return Array.from(document.querySelectorAll('#challan-items-body tr')).map(row => ({
+        particulars: row.querySelector('.c-part')?.value || '',
+        length: row.querySelector('.c-length')?.value || '',
+        breadth: row.querySelector('.c-breadth')?.value || '',
+        height: row.querySelector('.c-height')?.value || '',
+        qty: row.querySelector('.c-qty')?.value || '',
+        unit: row.querySelector('.c-unit')?.value || '',
+        extra: getExtraColumnValuesFromRow(row)
+      }));
+    }
+  } catch (e) {}
+  return [];
+}
+
+function restoreItemsForDraft(docType, sectionsData, extraColsData) {
+  extraCols[docType] = Array.isArray(extraColsData) ? extraColsData : [];
+  try {
+    if (docType === 'po') {
+      const c = document.getElementById('po-sections');
+      if (c) c.innerHTML = '';
+      if (Array.isArray(sectionsData) && sectionsData.length) {
+        sectionsData.forEach(sec => addPOSection(sec.name, sec.items));
+      } else {
+        addPOSection();
+      }
+    } else if (docType === 'pi') {
+      const c = document.getElementById('pi-sections');
+      if (c) c.innerHTML = '';
+      if (Array.isArray(sectionsData) && sectionsData.length) {
+        sectionsData.forEach(sec => addPISection(sec.name, sec.hasRooms, sec.items));
+      } else {
+        addPISection();
+      }
+    } else if (docType === 'inv') {
+      const c = document.getElementById('inv-sections');
+      if (c) c.innerHTML = '';
+      if (Array.isArray(sectionsData) && sectionsData.length) {
+        sectionsData.forEach(sec => addINVSection(sec.name, sec.hasRooms, sec.items));
+      } else {
+        addINVSection();
+      }
+    } else if (docType === 'challan') {
+      const c = document.getElementById('challan-items-body');
+      if (c) c.innerHTML = '';
+      if (Array.isArray(sectionsData) && sectionsData.length) {
+        sectionsData.forEach(it => addChallanItemRow(it));
+      } else {
+        addChallanItemRow();
+      }
+    }
+  } catch (e) {}
+}
+
+function saveDraft(docType) {
+  try {
+    const draft = {
+      fields: serializeSimpleFields(DRAFT_PANEL_IDS[docType]),
+      sections: captureItemsForDraft(docType),
+      extraColumns: extraCols[docType] || []
+    };
+    localStorage.setItem(DRAFT_KEYS[docType], JSON.stringify(draft));
+  } catch (e) { /* storage unavailable/full/blocked - skip autosave silently */ }
+}
+
+function loadDraft(docType) {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEYS[docType]);
+    if (!raw) return false;
+    const draft = JSON.parse(raw);
+    restoreItemsForDraft(docType, draft.sections, draft.extraColumns);
+    restoreSimpleFields(DRAFT_PANEL_IDS[docType], draft.fields);
+    return true;
+  } catch (e) { return false; }
+}
+
+function clearDraft(docType) {
+  try { localStorage.removeItem(DRAFT_KEYS[docType]); } catch (e) {}
+}
+
+function setupAutosave(docType) {
+  try {
+    const panel = document.getElementById(DRAFT_PANEL_IDS[docType]);
+    if (!panel) return;
+    let timer = null;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => saveDraft(docType), 700);
+    };
+    panel.addEventListener('input', schedule);
+    panel.addEventListener('change', schedule);
+  } catch (e) {}
 }
 
 function duplicateItemRow(el, docType) {
@@ -1495,15 +1537,6 @@ function duplicateItemRow(el, docType) {
   if (qtyInp) qtyInp.id = `qty-${newRowId}`;
   const rateInp = clone.querySelector('.f-rate');
   if (rateInp) rateInp.id = `rate-${newRowId}`;
-  const micBtn = clone.querySelector('.mic-btn');
-  if (micBtn) {
-    micBtn.id = `mic-${newRowId}`;
-    micBtn.setAttribute('onclick', `toggleSmartDictation('${newRowId}')`);
-    micBtn.classList.remove('recording', 'processing');
-    micBtn.title = 'Smart Mic Dictation (Hindi/English)';
-    micBtn.innerHTML = '🎙️';
-  }
-
   tr.after(clone);
 
   if (docType === 'po') {
@@ -1795,7 +1828,7 @@ function addPOSection(prefillName, prefillItems) {
     </div>
     <table class="po-items-table">
       <thead>
-        <tr><th>Particulars</th><th>HSN/SAC</th><th>Qty</th><th>UOM</th><th>Rate</th><th>Amount</th><th></th></tr>
+        <tr><th>Particulars</th><th>HSN/SAC</th><th>Qty</th><th>UOM</th><th>Rate</th>${extraColsHeaderHtml('po')}<th>Amount</th><th></th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -1803,6 +1836,7 @@ function addPOSection(prefillName, prefillItems) {
       <div style="display:flex; gap:8px; align-items:center;">
         <button type="button" class="btn secondary small" onclick="addPOItemRow('${sid}')">+ Add item</button>
         <button type="button" class="btn secondary small" style="color:#0284c7; border-color:#0284c7; font-weight:600;" onclick="openCatalogPicker('${sid}', 'po')">⚡ Quick Pick Catalog</button>
+        <button type="button" class="btn secondary small" onclick="addExtraColumn('po')">+ Add Column</button>
       </div>
       <div style="display:flex; align-items:center; gap:12px;">
         <div class="footer-note" style="margin:0;">Section Sub-Total: <span class="po-sec-subtotal" style="font-weight:700; color:#0f172a;">0.00</span></div>
@@ -1838,9 +1872,10 @@ function addPOItemRow(sid, prefill) {
     <td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:55px;" onchange="recalcPO()"></td>
     <td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || 'nos')}" style="width:55px;"></td>
     <td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPO()"></td>
+    ${extraColsRowHtml('po', p.extra)}
     <td class="amt-cell f-amount">0.00</td>
     <td class="item-actions">
-      <span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span>
+      
       <span class="duplicate-row" onclick="duplicateItemRow(this, 'po')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span>
       <span class="remove-row" onclick="this.closest('tr').remove(); recalcPO(); updateSectionCopyDropdowns('po');">✕</span>
     </td>
@@ -2782,8 +2817,9 @@ function getPOPayload() {
       const qty = parseFloat(row.querySelector('.f-qty')?.value) || 0;
       const rate = parseFloat(row.querySelector('.f-rate')?.value) || 0;
       const amount = parseFloat(row.querySelector('.f-amount')?.textContent) || 0;
-      items.push({ particulars, hsn, uom, qty, rate, amount });
-      allItems.push({ particulars, hsn, uom, qty, rate, amount });
+      const extra = getExtraColumnValuesFromRow(row);
+      items.push({ particulars, hsn, uom, qty, rate, amount, extra });
+      allItems.push({ particulars, hsn, uom, qty, rate, amount, extra });
     });
     if (name || items.length) {
       sections.push({ name, items, subtotal: parseFloat(div.querySelector('.po-sec-subtotal')?.textContent) || 0 });
@@ -2806,6 +2842,7 @@ function getPOPayload() {
     subject: document.getElementById('gen-subject').value,
     sections: sections,
     items: allItems,
+    extra_columns: buildExtraColumnsPayload('po'),
     sub_total: parseFloat(document.getElementById('sub-total').textContent) || 0,
     gst_pct: parseFloat(document.getElementById('gst-pct').value) || 0,
     gst_amt: parseFloat(document.getElementById('gst-amt').textContent) || 0,
@@ -2830,6 +2867,7 @@ async function generatePO(format = 'docx') {
   }
   const result = await generateViaBackend('/generate/purchase-order', payload, 'Purchase_Order', 'gen-status');
   if (result.ok) {
+    clearDraft('po');
     document.getElementById('gen-pono').value = '';
     autofillNumber('gen-pono', 'po', payload.issuing_address_key);
   }
@@ -2892,6 +2930,7 @@ function addPISection(prefillName, prefillRooms, prefillItems) {
       <div style="display:flex; gap:8px; align-items:center;">
         <button type="button" class="btn secondary small" onclick="addPIItemRow('${sid}')">+ Add item</button>
         <button type="button" class="btn secondary small" style="color:#0284c7; border-color:#0284c7; font-weight:600;" onclick="openCatalogPicker('${sid}', 'pi')">⚡ Quick Pick Catalog</button>
+        <button type="button" class="btn secondary small" onclick="addExtraColumn('pi')">+ Add Column</button>
       </div>
       <div style="display:flex; align-items:center; gap:12px;">
         <div class="footer-note" style="margin:0;">Section Sub-Total: <span class="pi-sec-subtotal" style="font-weight:700; color:#0f172a;">0.00</span></div>
@@ -2924,9 +2963,10 @@ function rebuildPIRow(tr, hasRooms, recalcFn) {
   const rate = tr.querySelector('.f-rate')?.value || '';
   const rooms = tr.querySelector('.f-rooms')?.value || '';
   const docType = recalcFn === 'recalcPI' ? 'pi' : 'inv';
+  const extraVals = getExtraColumnValuesFromRow(tr);
   tr.innerHTML = hasRooms
-    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td><input class="f-rooms" type="number" value="${rooms}" style="width:55px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`
-    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`;
+    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td><td><input class="f-rooms" type="number" value="${rooms}" style="width:55px;" onchange="${recalcFn}()"></td>${extraColsRowHtml(docType, extraVals)}<td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`
+    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(part)}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${qty}" style="width:65px;" onchange="${recalcFn}()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(uom)}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${rate}" style="width:75px;" onchange="${recalcFn}()"></td>${extraColsRowHtml(docType, extraVals)}<td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, '${docType}')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); ${recalcFn}(); updateSectionCopyDropdowns('${docType}');">✕</span></td>`;
 }
 
 function renderPISectionTable(sid) {
@@ -2934,8 +2974,8 @@ function renderPISectionTable(sid) {
   const hasRooms = div.querySelector('.pi-sec-rooms').checked;
   const thead = div.querySelector(':scope > table.pi-items-table > thead');
   thead.innerHTML = hasRooms
-    ? '<tr><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th><th>Amount</th><th></th></tr>'
-    : '<tr><th>Particulars</th><th>Qty</th><th>UOM</th><th>Rate</th><th>Amount</th><th></th></tr>';
+    ? `<tr><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th>${extraColsHeaderHtml('pi')}<th>Amount</th><th></th></tr>`
+    : `<tr><th>Particulars</th><th>Qty</th><th>UOM</th><th>Rate</th>${extraColsHeaderHtml('pi')}<th>Amount</th><th></th></tr>`;
   div.querySelectorAll(':scope > table.pi-items-table > tbody > tr').forEach(tr => rebuildPIRow(tr, hasRooms, 'recalcPI'));
   recalcPI();
 }
@@ -2951,8 +2991,8 @@ function addPIItemRow(sid, prefill) {
   tr.id = rowId;
   tr.dataset.rowId = rowId;
   tr.innerHTML = hasRooms
-    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`
-    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`;
+    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcPI()"></td>${extraColsRowHtml('pi', p.extra)}<td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`
+    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcPI()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcPI()"></td>${extraColsRowHtml('pi', p.extra)}<td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'pi')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcPI(); updateSectionCopyDropdowns('pi');">✕</span></td>`;
   tbody.appendChild(tr);
   recalcPI();
   updateSectionCopyDropdowns('pi');
@@ -3001,7 +3041,8 @@ function getPIPayload() {
       const rate = parseFloat(row.querySelector('.f-rate').value) || 0;
       const rooms = hasRooms ? (parseFloat(row.querySelector('.f-rooms').value) || 0) : null;
       const amount = parseFloat(row.querySelector('.f-amount').textContent) || 0;
-      items.push({ particulars, uom, qty, rate, rooms, amount });
+      const extra = getExtraColumnValuesFromRow(row);
+      items.push({ particulars, uom, qty, rate, rooms, amount, extra });
     });
     if (name || items.length) {
       sections.push({ name, has_rooms: hasRooms, items, subtotal: parseFloat(div.querySelector('.pi-sec-subtotal').textContent) || 0 });
@@ -3027,6 +3068,7 @@ function getPIPayload() {
     },
     subject: document.getElementById('pi-subject').value,
     sections: sections,
+    extra_columns: buildExtraColumnsPayload('pi'),
     project_total: parseFloat(document.getElementById('pi-project-total').textContent) || 0,
     gst_pct: parseFloat(document.getElementById('pi-gst-pct').value) || 0,
     gst_amt: parseFloat(document.getElementById('pi-gst-amt').textContent) || 0,
@@ -3053,6 +3095,7 @@ async function generatePI(format = 'docx') {
   }
   const result = await generateViaBackend('/generate/proforma-invoice', payload, 'Proforma_Invoice', 'pi-gen-status');
   if (result.ok) {
+    clearDraft('pi');
     document.getElementById('pi-no').value = '';
     autofillNumber('pi-no', 'pi', payload.issuing_address_key);
   }
@@ -3115,6 +3158,7 @@ function addINVSection(prefillName, prefillRooms, prefillItems) {
       <div style="display:flex; gap:8px; align-items:center;">
         <button type="button" class="btn secondary small" onclick="addINVItemRow('${sid}')">+ Add item</button>
         <button type="button" class="btn secondary small" style="color:#0284c7; border-color:#0284c7; font-weight:600;" onclick="openCatalogPicker('${sid}', 'inv')">⚡ Quick Pick Catalog</button>
+        <button type="button" class="btn secondary small" onclick="addExtraColumn('inv')">+ Add Column</button>
       </div>
       <div style="display:flex; align-items:center; gap:12px;">
         <div class="footer-note" style="margin:0;">Section Sub-Total: <span class="inv-sec-subtotal" style="font-weight:700; color:#0f172a;">0.00</span></div>
@@ -3142,8 +3186,8 @@ function renderINVSectionTable(sid) {
   const hasRooms = div.querySelector('.inv-sec-rooms').checked;
   const thead = div.querySelector(':scope > table.pi-items-table > thead');
   thead.innerHTML = hasRooms
-    ? '<tr><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th><th>Amount</th><th></th></tr>'
-    : '<tr><th>Particulars</th><th>Qty</th><th>UOM</th><th>Rate</th><th>Amount</th><th></th></tr>';
+    ? `<tr><th>Particulars</th><th>Qty/Area</th><th>UOM</th><th>Rate</th><th>No. of Rooms</th>${extraColsHeaderHtml('inv')}<th>Amount</th><th></th></tr>`
+    : `<tr><th>Particulars</th><th>Qty</th><th>UOM</th><th>Rate</th>${extraColsHeaderHtml('inv')}<th>Amount</th><th></th></tr>`;
   div.querySelectorAll(':scope > table.pi-items-table > tbody > tr').forEach(tr => rebuildPIRow(tr, hasRooms, 'recalcINV'));
   recalcINV();
 }
@@ -3159,8 +3203,8 @@ function addINVItemRow(sid, prefill) {
   tr.id = rowId;
   tr.dataset.rowId = rowId;
   tr.innerHTML = hasRooms
-    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`
-    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="mic-btn" id="mic-${rowId}" onclick="toggleSmartDictation('${rowId}')" title="Smart Mic Dictation (Hindi/English)">🎙️</span><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`;
+    ? `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td><td><input class="f-rooms" type="number" value="${p.rooms ?? ''}" style="width:55px;" onchange="recalcINV()"></td>${extraColsRowHtml('inv', p.extra)}<td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`
+    : `<td><input id="desc-${rowId}" class="f-part" list="catalog-datalist" value="${escapeHtml(p.particulars || p.description || '')}" oninput="handleParticularsInput(this)"></td><td><input id="qty-${rowId}" class="f-qty" type="number" value="${p.qty ?? ''}" style="width:65px;" onchange="recalcINV()"></td><td><input id="uom-${rowId}" class="f-uom" value="${escapeHtml(p.uom || '')}" style="width:55px;"></td><td><input id="rate-${rowId}" class="f-rate" type="number" value="${p.rate ?? ''}" style="width:75px;" onchange="recalcINV()"></td>${extraColsRowHtml('inv', p.extra)}<td class="amt-cell f-amount">0.00</td><td class="item-actions"><span class="duplicate-row" onclick="duplicateItemRow(this, 'inv')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span><span class="remove-row" onclick="this.closest('tr').remove(); recalcINV(); updateSectionCopyDropdowns('inv');">✕</span></td>`;
   tbody.appendChild(tr);
   recalcINV();
   updateSectionCopyDropdowns('inv');
@@ -3209,7 +3253,8 @@ function getINVPayload() {
       const rate = parseFloat(row.querySelector('.f-rate').value) || 0;
       const rooms = hasRooms ? (parseFloat(row.querySelector('.f-rooms').value) || 0) : null;
       const amount = parseFloat(row.querySelector('.f-amount').textContent) || 0;
-      items.push({ particulars, uom, qty, rate, rooms, amount });
+      const extra = getExtraColumnValuesFromRow(row);
+      items.push({ particulars, uom, qty, rate, rooms, amount, extra });
     });
     if (name || items.length) {
       sections.push({ name, has_rooms: hasRooms, items, subtotal: parseFloat(div.querySelector('.inv-sec-subtotal').textContent) || 0 });
@@ -3235,6 +3280,7 @@ function getINVPayload() {
     },
     subject: document.getElementById('inv-subject').value,
     sections: sections,
+    extra_columns: buildExtraColumnsPayload('inv'),
     project_total: parseFloat(document.getElementById('inv-project-total').textContent) || 0,
     gst_pct: parseFloat(document.getElementById('inv-gst-pct').value) || 0,
     gst_amt: parseFloat(document.getElementById('inv-gst-amt').textContent) || 0,
@@ -3261,6 +3307,7 @@ async function generateINV(format = 'docx') {
   }
   const result = await generateViaBackend('/generate/invoice', payload, 'Invoice', 'inv-gen-status');
   if (result.ok) {
+    clearDraft('inv');
     document.getElementById('inv-no').value = '';
     autofillNumber('inv-no', 'invoice', payload.issuing_address_key);
   }
@@ -3295,6 +3342,7 @@ function addChallanItemRow(prefill) {
     <td><input class="c-height" type="number" value="${p.height ?? ''}" style="width:70px;"></td>
     <td><input class="c-qty" type="number" value="${p.qty ?? ''}" style="width:55px;" onchange="recalcChallan()"></td>
     <td><input class="c-unit" value="${escapeHtml(p.unit || p.uom || 'nos')}" style="width:55px;"></td>
+    ${extraColsRowHtml('challan', p.extra)}
     <td class="item-actions">
       <span class="duplicate-row" onclick="duplicateItemRow(this, 'challan')" title="Duplicate row" style="cursor:pointer; margin-right:6px; color:#0284c7; font-weight:700;">📋</span>
       <span class="remove-row" onclick="this.closest('tr').remove(); renumberChallanRows(); recalcChallan();">✕</span>
@@ -3329,12 +3377,14 @@ function getChallanPayload() {
       breadth: row.querySelector('.c-breadth').value,
       height: row.querySelector('.c-height').value,
       qty: row.querySelector('.c-qty').value,
-      unit: row.querySelector('.c-unit').value
+      unit: row.querySelector('.c-unit').value,
+      extra: getExtraColumnValuesFromRow(row)
     });
   });
 
   return {
     document_type: "Delivery Challan",
+    extra_columns: buildExtraColumnsPayload('challan'),
     challan_no: document.getElementById('challan-no').value,
     challan_date: document.getElementById('challan-date').value,
     vehicle_no: document.getElementById('challan-vehicle').value,
@@ -3366,6 +3416,7 @@ async function generateChallan(format = 'docx') {
   }
   const result = await generateViaBackend('/generate/challan', payload, 'Delivery_Challan', 'challan-gen-status');
   if (result.ok) {
+    clearDraft('challan');
     document.getElementById('challan-no').value = '';
     autofillNumber('challan-no', 'challan', payload.issuing_address_key);
   }
@@ -3543,39 +3594,6 @@ async function testGeminiKey() {
   }
 }
 
-// --- Smart Mic Dictation (OpenAI Whisper + Anthropic Claude 3.5 Sonnet) ---
-let activeMediaRecorder = null;
-let activeRecordingRowId = null;
-let audioChunks = [];
-let mediaStream = null;
-let openAIApiKey = '';
-let anthropicApiKey = '';
-
-async function loadDictationKeys() {
-  try {
-    const oRes = await localDB.get('studio5_openai_key');
-    openAIApiKey = oRes && oRes.value ? oRes.value : '';
-    const aRes = await localDB.get('studio5_anthropic_key');
-    anthropicApiKey = aRes && aRes.value ? aRes.value : '';
-  } catch (e) {
-    openAIApiKey = '';
-    anthropicApiKey = '';
-  }
-  const oField = document.getElementById('openai-api-key');
-  if (oField) oField.value = openAIApiKey;
-  const aField = document.getElementById('anthropic-api-key');
-  if (aField) aField.value = anthropicApiKey;
-}
-
-async function saveDictationKeys() {
-  openAIApiKey = (document.getElementById('openai-api-key')?.value || '').trim();
-  anthropicApiKey = (document.getElementById('anthropic-api-key')?.value || '').trim();
-  await localDB.set('studio5_openai_key', openAIApiKey);
-  await localDB.set('studio5_anthropic_key', anthropicApiKey);
-  const statusEl = document.getElementById('dictation-keys-status');
-  if (statusEl) statusEl.textContent = 'API keys saved securely on this device.';
-}
-
 async function checkServerConfigStatus() {
   try {
     const effectiveBackend = (typeof backendUrl !== 'undefined' && backendUrl)
@@ -3590,212 +3608,8 @@ async function checkServerConfigStatus() {
           gStatus.innerHTML = '<span style="color:#15803d; font-weight:600;">✓ Active on Server (No device input needed)</span>';
         }
       }
-      if (status.openai && status.anthropic) {
-        const dStatus = document.getElementById('dictation-keys-status');
-        if (dStatus) {
-          dStatus.innerHTML = '<span style="color:#15803d; font-weight:600;">✓ Active on Server (OpenAI & Anthropic) — Ready on all phones and devices!</span>';
-        }
-      }
     }
   } catch (e) {}
-}
-
-function cleanupRecordingUI(rowId) {
-  const row = document.getElementById(rowId);
-  const micBtn = document.getElementById(`mic-${rowId}`);
-  if (row) {
-    row.classList.remove('row-recording', 'row-processing');
-  }
-  if (micBtn) {
-    micBtn.classList.remove('recording', 'processing');
-    micBtn.title = 'Smart Mic Dictation (Hindi/English)';
-    micBtn.innerHTML = '🎙️';
-  }
-}
-
-async function startSmartDictation(rowId) {
-  if (activeRecordingRowId && activeRecordingRowId !== rowId) {
-    await stopSmartDictation(activeRecordingRowId);
-  }
-
-  const row = document.getElementById(rowId);
-  const micBtn = document.getElementById(`mic-${rowId}`);
-  if (!row) return;
-
-  try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert("Microphone recording is not supported in this browser. Please use Chrome, Edge, or Safari over HTTPS or localhost.");
-      return;
-    }
-
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    let options = {};
-    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-      options = { mimeType: 'audio/webm;codecs=opus' };
-    } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-      options = { mimeType: 'audio/webm' };
-    } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-      options = { mimeType: 'audio/mp4' };
-    } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-      options = { mimeType: 'audio/ogg' };
-    }
-
-    audioChunks = [];
-    activeMediaRecorder = new MediaRecorder(mediaStream, options);
-    activeRecordingRowId = rowId;
-
-    activeMediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
-        audioChunks.push(e.data);
-      }
-    };
-
-    activeMediaRecorder.start();
-
-    row.classList.add('row-recording');
-    if (micBtn) {
-      micBtn.classList.add('recording');
-      micBtn.title = 'Recording voice... Click to Stop & Parse';
-      micBtn.innerHTML = '🛑';
-    }
-
-    const descInp = document.getElementById(`desc-${rowId}`);
-    if (descInp && !descInp.value) {
-      descInp.placeholder = '🎙️ Listening... speak in Hindi or English (e.g., "Gypsum ceiling 400 sqft rate 125")';
-    }
-  } catch (err) {
-    console.error("Mic access error:", err);
-    alert("Could not access microphone: " + (err.message || err.name));
-    cleanupRecordingUI(rowId);
-  }
-}
-
-async function stopSmartDictation(rowId) {
-  if (!activeMediaRecorder || activeRecordingRowId !== rowId) return;
-
-  const row = document.getElementById(rowId);
-  const micBtn = document.getElementById(`mic-${rowId}`);
-
-  return new Promise((resolve) => {
-    activeMediaRecorder.onstop = async () => {
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(t => t.stop());
-        mediaStream = null;
-      }
-
-      if (row) {
-        row.classList.remove('row-recording');
-        row.classList.add('row-processing');
-      }
-      if (micBtn) {
-        micBtn.classList.remove('recording');
-        micBtn.classList.add('processing');
-        micBtn.title = 'AI Transcribing & Estimating...';
-        micBtn.innerHTML = '⏳';
-      }
-
-      const descInp = document.getElementById(`desc-${rowId}`);
-      const oldPlaceholder = descInp ? descInp.placeholder : '';
-      if (descInp) {
-        descInp.placeholder = '⏳ AI is listening & estimating (Qty, UOM, Rate)...';
-      }
-
-      try {
-        const mimeType = activeMediaRecorder.mimeType || 'audio/webm';
-        const ext = mimeType.includes('mp4') ? 'mp4' : (mimeType.includes('ogg') ? 'ogg' : 'webm');
-        const audioBlob = new Blob(audioChunks, { type: mimeType });
-
-        const formData = new FormData();
-        formData.append('audio', audioBlob, `speech-${Date.now()}.${ext}`);
-
-        if (typeof geminiApiKey !== 'undefined' && geminiApiKey) {
-          formData.append('geminiApiKey', geminiApiKey);
-        }
-        if (typeof openAIApiKey !== 'undefined' && openAIApiKey) {
-          formData.append('openaiApiKey', openAIApiKey);
-        }
-        if (typeof anthropicApiKey !== 'undefined' && anthropicApiKey) {
-          formData.append('anthropicApiKey', anthropicApiKey);
-        }
-
-        const effectiveBackend = (typeof backendUrl !== 'undefined' && backendUrl)
-          ? backendUrl
-          : (window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000');
-
-        const headers = {};
-        if (typeof geminiApiKey !== 'undefined' && geminiApiKey) headers['x-gemini-key'] = geminiApiKey;
-        if (typeof openAIApiKey !== 'undefined' && openAIApiKey) headers['x-openai-key'] = openAIApiKey;
-        if (typeof anthropicApiKey !== 'undefined' && anthropicApiKey) headers['x-anthropic-key'] = anthropicApiKey;
-
-        const res = await fetch(`${effectiveBackend}/api/parse-item-audio`, {
-          method: 'POST',
-          headers,
-          body: formData
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Server responded with status ${res.status}`);
-        }
-
-        const result = await res.json();
-        console.log("Smart dictation result:", result);
-
-        const data = result.data || result;
-
-        if (data) {
-          const descEl = document.getElementById(`desc-${rowId}`);
-          const uomEl = document.getElementById(`uom-${rowId}`);
-          const qtyEl = document.getElementById(`qty-${rowId}`);
-          const rateEl = document.getElementById(`rate-${rowId}`);
-
-          if (descEl && (data.description !== undefined && data.description !== null)) {
-            descEl.value = data.description;
-          }
-          if (uomEl && (data.uom !== undefined && data.uom !== null)) {
-            uomEl.value = data.uom;
-          }
-          if (qtyEl && data.qty !== null && data.qty !== undefined) {
-            qtyEl.value = data.qty;
-          }
-          if (rateEl && data.rate !== null && data.rate !== undefined) {
-            rateEl.value = data.rate;
-          }
-
-          if (row) {
-            if (row.closest('#po-sections-container')) {
-              recalcPO();
-            } else if (row.closest('#pi-sections-container')) {
-              recalcPI();
-            } else if (row.closest('#inv-sections-container')) {
-              if (typeof recalcINV === 'function') recalcINV();
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Smart dictation processing failed:", err);
-        alert("Smart Dictation Error: " + err.message);
-      } finally {
-        cleanupRecordingUI(rowId);
-        if (descInp) descInp.placeholder = oldPlaceholder;
-        activeMediaRecorder = null;
-        activeRecordingRowId = null;
-        audioChunks = [];
-        resolve();
-      }
-    };
-
-    activeMediaRecorder.stop();
-  });
-}
-
-function toggleSmartDictation(rowId) {
-  if (activeRecordingRowId === rowId) {
-    stopSmartDictation(rowId);
-  } else {
-    startSmartDictation(rowId);
-  }
 }
 
 async function loadCatalogItems() {
@@ -4287,7 +4101,6 @@ loadBackendUrl().then(() => {
   });
 });
 loadGeminiKey();
-loadDictationKeys();
 checkServerConfigStatus();
 loadCatalogItems();
 loadBuyers();
@@ -4300,6 +4113,12 @@ document.getElementById('inv-date').valueAsDate = new Date();
 addINVSection();
 document.getElementById('challan-date').valueAsDate = new Date();
 addChallanItemRow();
+
+// Restore any in-progress drafts (survives accidental mobile browser reload), then start autosaving.
+['po', 'pi', 'inv', 'challan'].forEach(dt => {
+  loadDraft(dt);
+  setupAutosave(dt);
+});
 </script>
 
 <!-- CATALOG PICKER MODAL -->

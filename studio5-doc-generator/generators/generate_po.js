@@ -58,17 +58,33 @@ function cell(text, opts = {}) {
   });
 }
 
-const colWidths = [500, 3200, 900, 700, 700, 900, 1200]; // Sr, Particulars, HSN, UOM, Qty, Rate, Amount
+const extraColumns = Array.isArray(payload.extra_columns) ? payload.extra_columns : [];
+const EXTRA_COL_WIDTH = 900;
+const baseColWidths = [500, 3200, 900, 700, 700, 900]; // Sr, Particulars, HSN, Qty, UOM, Rate
+const shrink = extraColumns.length * EXTRA_COL_WIDTH;
+const particularsWidth = Math.max(1400, baseColWidths[1] - shrink);
+const colWidths = [
+  baseColWidths[0], particularsWidth, baseColWidths[2], baseColWidths[3], baseColWidths[4], baseColWidths[5],
+  ...extraColumns.map(() => EXTRA_COL_WIDTH),
+  1200 // Amount
+];
+const amountColIdx = colWidths.length - 1;
+const headerLabels = ["Sr. No.", "Particulars", "HSN/SAC", "Qty", "UOM", "Rate", ...extraColumns.map(c => c.label), "Amount"];
 const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+
+function extraCells(it) {
+  const extraVals = (it && it.extra) || {};
+  return extraColumns.map((c, idx) => cell(extraVals[c.key] ?? "", { width: colWidths[6 + idx], align: AlignmentType.CENTER }));
+}
 
 function totalsRow(label, value, bold = false) {
   return new TableRow({
     children: [
       new TableCell({
-        columnSpan: 6, width: { size: colWidths.slice(0, 6).reduce((a, b) => a + b, 0), type: WidthType.DXA },
+        columnSpan: amountColIdx, width: { size: colWidths.slice(0, amountColIdx).reduce((a, b) => a + b, 0), type: WidthType.DXA },
         children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: label, bold })] })]
       }),
-      cell(fmt(value), { width: colWidths[6], align: AlignmentType.RIGHT, bold })
+      cell(fmt(value), { width: colWidths[amountColIdx], align: AlignmentType.RIGHT, bold })
     ]
   });
 }
@@ -78,7 +94,7 @@ const tableBlocks = [];
 if (payload.sections && Array.isArray(payload.sections) && payload.sections.length > 0) {
   payload.sections.forEach((sec, si) => {
     const secHeaderRow = new TableRow({
-      children: ["Sr. No.", "Particulars", "HSN/SAC", "Qty", "UOM", "Rate", "Amount"].map((h, i) =>
+      children: headerLabels.map((h, i) =>
         cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
       )
     });
@@ -92,7 +108,7 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
         children: [
           cell(si + 1, { width: colWidths[0], align: AlignmentType.CENTER, bold: true }),
           new TableCell({
-            columnSpan: 6,
+            columnSpan: amountColIdx,
             width: { size: colWidths.slice(1).reduce((a, b) => a + b, 0), type: WidthType.DXA },
             children: [new Paragraph({ children: [new TextRun({ text: sec.name, bold: true, size: 20 })] })]
           })
@@ -109,7 +125,8 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
             cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
             cell(it.uom || "nos", { width: colWidths[4], align: AlignmentType.CENTER }),
             cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
-            cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
+            ...extraCells(it),
+            cell(fmt(it.amount), { width: colWidths[amountColIdx], align: AlignmentType.RIGHT }),
           ]
         }));
       });
@@ -118,11 +135,11 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
       secRows.push(new TableRow({
         children: [
           new TableCell({
-            columnSpan: 6,
-            width: { size: colWidths.slice(0, 6).reduce((a, b) => a + b, 0), type: WidthType.DXA },
+            columnSpan: amountColIdx,
+            width: { size: colWidths.slice(0, amountColIdx).reduce((a, b) => a + b, 0), type: WidthType.DXA },
             children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `Sub-Total (${sec.name})`, bold: true, size: 20 })] })]
           }),
-          cell(fmt(secTotal), { width: colWidths[6], align: AlignmentType.RIGHT, bold: true })
+          cell(fmt(secTotal), { width: colWidths[amountColIdx], align: AlignmentType.RIGHT, bold: true })
         ]
       }));
     } else {
@@ -135,7 +152,8 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
             cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
             cell(it.uom || "nos", { width: colWidths[4], align: AlignmentType.CENTER }),
             cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
-            cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
+            ...extraCells(it),
+            cell(fmt(it.amount), { width: colWidths[amountColIdx], align: AlignmentType.RIGHT }),
           ]
         }));
       });
@@ -160,7 +178,7 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
   }));
 } else {
   const headerRow = new TableRow({
-    children: ["Sr. No.", "Particulars", "HSN/SAC", "Qty", "UOM", "Rate", "Amount"].map((h, i) =>
+    children: headerLabels.map((h, i) =>
       cell(h, { header: true, bold: true, width: colWidths[i], align: AlignmentType.CENTER })
     )
   });
@@ -173,7 +191,8 @@ if (payload.sections && Array.isArray(payload.sections) && payload.sections.leng
       cell(it.qty, { width: colWidths[3], align: AlignmentType.CENTER }),
       cell(it.uom || "nos", { width: colWidths[4], align: AlignmentType.CENTER }),
       cell(fmt(it.rate), { width: colWidths[5], align: AlignmentType.RIGHT }),
-      cell(fmt(it.amount), { width: colWidths[6], align: AlignmentType.RIGHT }),
+      ...extraCells(it),
+      cell(fmt(it.amount), { width: colWidths[amountColIdx], align: AlignmentType.RIGHT }),
     ]
   }));
 
