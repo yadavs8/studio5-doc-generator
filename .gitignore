@@ -3,3 +3,4 @@ package-lock.json
 uploads/
 .env
 .DS_Store
+generated_docs/
