@@ -71,6 +71,100 @@ number fields instead of using the autofilled one. The server checks it isn't a
 duplicate and, if it isn't, advances the counter past it so future autofilled
 numbers never collide with it.
 
+## Proforma Invoices: draft, final, revise
+
+`POST /generate/proforma-invoice` takes a `mode` in the body:
+
+| mode | What happens |
+|---|---|
+| `draft` | A `DRAFT`-numbered .docx to download. No number used, nothing saved. |
+| `final` | Needs `site_id` (and optionally `po_id`, `work_status`). Takes the next number, saves the file to the po-tracker's `studio5-documents` storage, and creates the PI in the tracker — so it shows on that site's statement. |
+| `revise` | Needs `revise_of: "<PI number>"` and `site_id`. Same number, next revision (`_r2`, `_r3`…). The tracker's PI is updated to the new amount and file; earlier revisions stay downloadable. A PI already converted to a tax invoice can't be revised. |
+| *(none)* | The original behaviour, kept until the page sends a mode. |
+
+A typed number more than 5 ahead of the next one is refused unless the body
+says `confirm_far_ahead: true` — a slip like 1102 for 112 would otherwise push
+every later number past 1102.
+
+**If saving fails** after a number is taken (storage down, tracker refuses),
+the answer is `502` with `code: "SAVED_AS_PENDING"` and a `ledger_id`. The
+entry stays **pending** — never falsely "issued" — and can be finished or
+dropped:
+- `POST /api/documents/:ledgerId/retry` — rebuild the .docx and save it
+- `POST /api/documents/:ledgerId/abandon` `{ reason }` — void it (a pending revision leaves the live one untouched)
+
+**PDF made in the browser:** call generate with `?format=json` (reserves the
+number as pending), then send the PDF to `POST /api/documents/:ledgerId/file`
+(multipart, field `file`).
+
+`GET /api/documents/:ledgerId/download` returns a 5-minute link to any saved revision.
+
+**Lookups for the page's pickers** (read from the po-tracker's tables):
+- `GET /api/sites` — clients → open sites → sub-projects and open POs. Each
+  client carries its legal name, GSTIN and billing address for the buyer block.
+  Inactive clients, closed/completed sites and completed POs are left out.
+- `GET /api/pis?site_id=<uuid>` — every PI on that site, newest first, with
+  `can_revise` and, when not, `why_not` (already a tax invoice, or a revision
+  still pending). `source: "generator"` PIs have a `ledger_id` whose saved
+  form loads back for **Revise**. `source: "tracker"` PIs were typed into the
+  tracker by hand: generate a **Final** with that same number and it links to
+  them instead of adding a second PI.
+- `GET /api/pis/unlinked` — PIs issued before PIs were tied to a site.
+  Revising one with a `site_id` links it from then on.
+- `GET /api/documents/:ledgerId` — one entry with the form details it was made from.
+
+## Sign-in
+
+Everything except the page itself, `/assets`, `/manifest.json`, `/health`,
+`/api/auth-config`, `/api/config-status` and the three sign-in steps below
+needs a signed-in user. Accounts are the **same people as studio5-po-tracker**
+(same Supabase project).
+
+**How people sign in**
+1. **First time on a phone/PC:** enter email → a one-time code arrives by
+   email → enter it. Only accounts that already exist get a code.
+2. **Set a 4-digit MPIN** for that device (easy ones like 1111 or 1234 are refused).
+3. **Every time after that:** just the MPIN.
+4. **5 wrong MPINs** lock that device; it then needs a new email code.
+   **Forgot MPIN?** on the MPIN screen does the same.
+5. **Lost phone:** bottom-left **Devices** → **Remove**. Its MPIN stops working
+   at once. **Lock** closes the session on the current device.
+
+The MPIN only works together with a secret stored in that browser, so it is
+useless on another phone. Clearing the browser's data, or using a different
+browser, counts as a new device. "Add to Home Screen" makes it feel like an app.
+
+**One-time setup on Render** (add next to the two Supabase variables above):
+- `DEVICE_TOKEN_KEY` — a random 32-byte key that encrypts each device's saved
+  sign-in. Generate one with
+  `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+  Keep it secret; **changing it signs every device out** (they re-do the email code).
+- `SUPABASE_PUBLISHABLE_KEY` (recommended) — Supabase **Settings → API →
+  publishable (anon) key**, used for the sign-in calls.
+- `CORS_ORIGINS` (optional) — comma-separated list of *other* websites allowed
+  to call this API from a browser, e.g. `https://yadavs8.github.io`. The tool
+  itself is served by this server, so it never needs listing.
+
+**One-time setup in Supabase:**
+1. Run `supabase/migration_003_trusted_devices.sql` in the SQL editor (after 002).
+2. **Authentication → Sign In / Providers:** turn **off** "Allow new users to
+   sign up". Add people yourself under **Authentication → Users → Add user**
+   (email only is enough — they never need a password).
+3. **Authentication → Emails → Templates → Magic Link:** make the email show
+   the code by including `{{ .Token }}`, e.g. *"Your Studio5 sign-in code is
+   {{ .Token }}"*. Without it the email contains only a link and no code.
+4. **Authentication → Emails → SMTP Settings:** set up your own SMTP (e.g.
+   Brevo, Resend or a Gmail app password). Supabase's built-in mailer only
+   delivers to your Supabase team's own addresses and only a few emails an
+   hour, so codes to anyone else would never arrive.
+5. *(Optional)* **Settings → JWT → access token expiry:** a session lasts this
+   long (default 1 hour) before the MPIN is asked again in an open tab.
+
+**Running on your PC without Supabase:** if `SUPABASE_URL` /
+`SUPABASE_SERVICE_ROLE_KEY` are not set, the server still answers requests
+from this same computer (localhost) with no sign-in — and refuses everyone
+else. A cloud deploy with missing variables therefore fails closed.
+
 ## Deploy to Render (10 minutes, one-time)
 
 1. **Push this folder to a new GitHub repo** (e.g. `studio5-doc-generator`) — same as you

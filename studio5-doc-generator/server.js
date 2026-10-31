@@ -9,20 +9,145 @@ const generatePI = require("./generators/generate_pi.js");
 const generateInvoice = require("./generators/generate_invoice.js");
 const generateChallan = require("./generators/generate_challan.js");
 const documentNumbering = require("./lib/documentNumbering.js");
+const storage = require("./lib/storage.js");
+const tracker = require("./lib/tracker.js");
+const { requireUser, publicAuthConfig } = require("./lib/auth.js");
+const devices = require("./lib/devices.js");
 
 const app = express();
+// Render sits behind one proxy; trust it so req.ip is the caller, not the
+// proxy (the sign-in rate limits below count per caller).
+if (process.env.RENDER) app.set("trust proxy", 1);
+
+// Only these sites may call the API from a browser. The tool itself is
+// served by this same server, so it is same-origin and needs no entry here;
+// add other front-ends (e.g. the po-tracker's GitHub Pages site) through
+// CORS_ORIGINS, comma-separated.
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000")
+    .split(",")
+    .map(o => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean)
+);
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-gemini-key");
-  if (req.method === "OPTIONS") return res.sendStatus(200);
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-gemini-key, x-record-only");
+    res.setHeader("Access-Control-Expose-Headers", "X-Document-Number, X-Ledger-Id, X-Revision, X-Pi-Id, Content-Disposition");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
-app.use(express.json({ limit: "25mb" }));
-app.use(express.static(path.join(__dirname)));
+
+// Public: the page itself, its assets, and what it needs before sign-in.
+// Only named files are served — serving the whole folder used to expose
+// generated_docs/ (every saved PI/invoice) to anyone who guessed a path.
+app.use("/assets", express.static(path.join(__dirname, "assets")));
+app.get("/manifest.json", (req, res) => res.sendFile(path.join(__dirname, "manifest.json")));
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "studio5_doc_generator.html"));
 });
+app.get("/health", (req, res) => res.json({ status: "ok" }));
+app.get("/api/auth-config", (req, res) => res.json(publicAuthConfig()));
+app.get("/api/config-status", (req, res) => {
+  res.json({
+    gemini: !!process.env.GEMINI_API_KEY,
+    supabase: !!process.env.SUPABASE_URL,
+    auth: publicAuthConfig().enabled
+  });
+});
+
+// ----- Sign-in: email code once per device, then a 4-digit MPIN -----
+// These run before sign-in exists, so each is rate-limited per caller on top
+// of Supabase's own limits and the 5-wrong-MPIN device lock.
+const rateBuckets = new Map();
+function rateLimit(name, perMinute) {
+  return (req, res, next) => {
+    const key = `${name}:${req.ip}`;
+    const now = Date.now();
+    const b = rateBuckets.get(key);
+    if (!b || b.resetAt <= now) {
+      rateBuckets.set(key, { count: 1, resetAt: now + 60 * 1000 });
+      if (rateBuckets.size > 5000) for (const [k, v] of rateBuckets) if (v.resetAt <= now) rateBuckets.delete(k);
+      return next();
+    }
+    if (++b.count > perMinute) {
+      return res.status(429).json({ error: "Too many attempts. Please wait a minute and try again.", code: "RATE_LIMITED" });
+    }
+    next();
+  };
+}
+const smallJson = express.json({ limit: "10kb" });
+
+function handleDeviceError(res, e) {
+  if (e.status) return res.status(e.status).json({ error: e.message, code: e.code });
+  console.error("[devices]", e);
+  res.status(500).json({ error: "Sign-in failed on the server. Please try again." });
+}
+
+app.post("/api/auth/otp/start", rateLimit("otp-start", 5), smallJson, async (req, res) => {
+  try {
+    await devices.startOtp(req.body.email);
+    res.json({ ok: true });
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.post("/api/auth/otp/verify", rateLimit("otp-verify", 10), smallJson, async (req, res) => {
+  try {
+    const { email, code, device_name, replace_device_id } = req.body;
+    res.json(await devices.verifyOtp(email, code, device_name, replace_device_id));
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.post("/api/auth/pin/unlock", rateLimit("pin-unlock", 20), smallJson, async (req, res) => {
+  try {
+    const { device_id, device_secret, pin } = req.body;
+    res.json(await devices.unlockWithPin(device_id, device_secret, pin));
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+// Everything registered below requires a signed-in user. Checked before the
+// body is parsed, so an anonymous caller can't make the server read 25 MB.
+app.use(requireUser);
+
+app.post("/api/auth/pin/set", smallJson, async (req, res) => {
+  try {
+    if (!req.user) return res.status(503).json({ error: "MPIN sign-in is not set up on this server.", code: "NOT_CONFIGURED" });
+    const { device_id, device_secret, pin } = req.body;
+    await devices.setPin(req.user.id, device_id, device_secret, pin);
+    res.json({ ok: true });
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.get("/api/auth/devices", async (req, res) => {
+  try {
+    res.json(await devices.listDevices());
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.post("/api/auth/devices/:id/revoke", async (req, res) => {
+  try {
+    await devices.revokeDevice(req.params.id, req.user && req.user.email);
+    res.json({ ok: true });
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.use(express.json({ limit: "25mb" }));
 
 function getExtractionPrompt(scopeMode) {
   const isRenovation = scopeMode !== "new_work";
@@ -218,10 +343,6 @@ app.post("/extract-items", async (req, res) => {
   }
 });
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "studio5_doc_generator.html"));
-});
-
 const logoBuffer = fs.readFileSync(path.join(__dirname, "assets", "logo.png"));
 const stampBuffer = fs.existsSync(path.join(__dirname, "assets", "stamp.png"))
   ? fs.readFileSync(path.join(__dirname, "assets", "stamp.png"))
@@ -346,11 +467,84 @@ function safeFilenamePart(docNumber) {
 }
 
 function handleLedgerError(res, e) {
-  if (e.code === "DUPLICATE_NUMBER") {
-    return res.status(409).json({ error: e.message });
+  if (["DUPLICATE_NUMBER", "NUMBER_FAR_AHEAD", "REVISION_IN_PROGRESS"].includes(e.code)) {
+    return res.status(409).json({ error: e.message, code: e.code });
   }
+  if (e.code === "BAD_INPUT") return res.status(400).json({ error: e.message, code: e.code });
+  if (e.code === "NOT_FOUND") return res.status(404).json({ error: e.message, code: e.code });
+  if (e.code === "NOT_CONFIGURED") return res.status(503).json({ error: e.message, code: e.code });
   console.error(e);
   return res.status(500).json({ error: e.message });
+}
+
+// ----- Proforma Invoice: draft / final / revise, linked to the po-tracker -----
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const storageDocxType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function badInput(message) {
+  const err = new Error(message);
+  err.code = "BAD_INPUT";
+  return err;
+}
+
+// What the tracker's proforma_invoice row needs, checked before a number is
+// spent so a missing site can't leave a pending entry behind.
+function piTrackerFields(src) {
+  const siteId = src.site_id;
+  if (!siteId || !UUID_RE.test(siteId)) throw badInput("Pick the client site this PI is for.");
+  if (src.po_id && !UUID_RE.test(src.po_id)) throw badInput("The selected PO / work order is not valid.");
+  if (src.sub_project_id && !UUID_RE.test(src.sub_project_id)) throw badInput("The selected sub-project is not valid.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(src.pi_date || ""))) throw badInput("Enter the P.I. date.");
+  const amount = Number(src.grand_total);
+  if (!(amount > 0)) throw badInput("The PI total must be more than zero.");
+  return {
+    siteId,
+    poId: src.po_id || null,
+    subProjectId: src.sub_project_id || null,
+    piDate: src.pi_date,
+    amount,
+    remarks: src.work_status || null,
+    // The statement line for this PI, e.g. "Tile Work on Lily Pond".
+    subject: String(src.subject || "").replace(/\s+/g, " ").trim().slice(0, 300) || null,
+  };
+}
+
+// Upload, then record in one database transaction. If recording fails the
+// upload is removed again and the ledger row stays pending.
+async function storeAndFinalizePi(ledger, buffer, ext, fields, userId) {
+  const storagePath = storage.pathFor("pi", fields.siteId, ledger.docNumber, ledger.revision, ext);
+  await storage.upload(storagePath, buffer, ext);
+  try {
+    const piId = await documentNumbering.finalizePi({ ledgerId: ledger.ledgerId, storagePath, userId, ...fields });
+    return { piId, storagePath };
+  } catch (e) {
+    await storage.remove(storagePath);
+    throw e;
+  }
+}
+
+// After a number is reserved, a failure must say so: the entry is pending and
+// can be retried or discarded from the Library.
+function sendPendingError(res, e, ledger) {
+  console.error(`[pi] ${ledger.docNumber} r${ledger.revision} left pending:`, e.message);
+  res.status(502).json({
+    error: `PI ${ledger.docNumber} could not be saved: ${e.message} It is kept as pending — retry or discard it from the Library.`,
+    code: "SAVED_AS_PENDING",
+    ledger_id: ledger.ledgerId,
+    doc_number: ledger.docNumber,
+    revision: ledger.revision,
+  });
+}
+
+function sendFinalPi(res, buf, payload, ledger, result) {
+  const label = ledger.revision > 1 ? `${ledger.docNumber} r${ledger.revision}` : ledger.docNumber;
+  const filename = buildDescriptiveDocFilename("pi", payload, label, "docx");
+  // Optional copy on this PC; on Render the disk is wiped on every restart.
+  if (process.env.STUDIO5_DOCS_DIR) autoSaveDocBuffer("pi", payload.pi_date, filename, buf);
+  res.setHeader("X-Ledger-Id", ledger.ledgerId);
+  res.setHeader("X-Revision", String(ledger.revision));
+  res.setHeader("X-Pi-Id", result.piId);
+  sendDocx(res, buf, filename, ledger.docNumber);
 }
 
 // GET /next-number/:docType?address=<key> — read-only preview of what the
@@ -425,9 +619,19 @@ app.post("/generate/purchase-order", async (req, res) => {
   }
 });
 
+// mode (in the body):
+//   "draft"  — a DRAFT-numbered file to download; no number spent, nothing saved.
+//   "final"  — new number, saved to storage, PI created in the po-tracker.
+//   "revise" — revise_of: "<number>"; same number, next revision, the
+//              tracker's PI updated, earlier revisions kept.
+//   (none)   — the original behaviour, until the page sends a mode.
+// With ?format=json (browser-made PDF), final/revise only reserve the number;
+// the PDF then goes to POST /api/documents/:ledgerId/file.
 app.post("/generate/proforma-invoice", async (req, res) => {
+  const payload = req.body;
+  const mode = payload.mode;
+  if (mode) return generatePiWithMode(req, res, payload, mode);
   try {
-    const payload = req.body;
     const { docNumber } = await documentNumbering.allocateAndRecord("pi", {
       docNumber: payload.pi_no,
       issuingAddressKey: payload.issuing_address_key,
@@ -447,6 +651,80 @@ app.post("/generate/proforma-invoice", async (req, res) => {
     handleLedgerError(res, e);
   }
 });
+
+async function generatePiWithMode(req, res, payload, mode) {
+  let ledger = null;
+  try {
+    if (!["draft", "final", "revise"].includes(mode)) throw badInput(`Unknown mode "${mode}".`);
+
+    if (mode === "draft") {
+      payload.pi_no = "DRAFT";
+      const buf = await generatePI(payload, logoBuffer, stampBuffer);
+      return sendDocx(res, buf, buildDescriptiveDocFilename("pi", payload, "DRAFT", "docx"), null);
+    }
+
+    if (!require("./lib/supabase")) {
+      const err = new Error("Final and revised PIs need Supabase, which is not configured on this server. Use Draft.");
+      err.code = "NOT_CONFIGURED";
+      throw err;
+    }
+    const fields = piTrackerFields(payload);
+    const userId = req.user ? req.user.id : null;
+    const common = {
+      payload,
+      totalAmount: fields.amount,
+      counterpartyName: payload.buyer && payload.buyer.name,
+      issuingAddressKey: payload.issuing_address_key,
+      createdBy: userId,
+      siteId: fields.siteId,
+      poId: fields.poId,
+    };
+
+    if (mode === "final") {
+      ledger = await documentNumbering.allocateAndRecord("pi", {
+        ...common,
+        docNumber: payload.pi_no,
+        status: "pending",
+        confirmFarAhead: payload.confirm_far_ahead === true,
+      });
+    } else {
+      if (!payload.revise_of) throw badInput("Pick the PI to revise.");
+      ledger = await documentNumbering.beginRevision("pi", payload.revise_of, common);
+    }
+    payload.pi_no = ledger.docNumber;
+
+    if (req.query.format === "json" || req.headers["x-record-only"] === "true") {
+      return res.json({ success: true, docNumber: ledger.docNumber, ledger_id: ledger.ledgerId, revision: ledger.revision, payload });
+    }
+
+    let buf, result;
+    try {
+      buf = await generatePI(payload, logoBuffer, stampBuffer);
+      result = await storeAndFinalizePi(ledger, buf, "docx", fields, userId);
+    } catch (e) {
+      return sendPendingError(res, e, ledger);
+    }
+    sendFinalPi(res, buf, payload, ledger, result);
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+}
+
+// A pending PI's ledger row holds everything needed to finish it.
+async function loadPendingPi(ledgerId) {
+  if (!UUID_RE.test(String(ledgerId))) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+  const row = await documentNumbering.getLedgerRow(ledgerId);
+  if (!row || row.doc_type !== "pi") throw Object.assign(new Error("No such PI."), { code: "NOT_FOUND" });
+  if (row.status !== "pending") throw badInput(`PI ${row.doc_number} (revision ${row.revision}) is already ${row.status}.`);
+  const payload = { ...row.payload, pi_no: row.doc_number };
+  const fields = piTrackerFields({
+    ...payload,
+    site_id: row.site_id,
+    po_id: row.po_id,
+    grand_total: row.total_amount,
+  });
+  return { row, payload, fields, ledger: { ledgerId: row.id, docNumber: row.doc_number, revision: row.revision } };
+}
 
 app.post("/generate/invoice", async (req, res) => {
   try {
@@ -498,6 +776,132 @@ app.post("/generate/challan", async (req, res) => {
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }
+});
+
+// POST /api/documents/:ledgerId/file (multipart "file") — finishes a pending
+// PI with a file made in the browser (the PDF route), the same way the server
+// finishes a .docx: upload, then record in the po-tracker.
+app.post("/api/documents/:ledgerId/file", memoryUpload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) throw badInput("No file was sent.");
+    const ext = req.file.mimetype === "application/pdf" ? "pdf"
+      : req.file.mimetype === storageDocxType ? "docx" : null;
+    if (!ext) throw badInput("Only PDF or Word (.docx) files can be saved.");
+    const { fields, ledger } = await loadPendingPi(req.params.ledgerId);
+    let result;
+    try {
+      result = await storeAndFinalizePi(ledger, req.file.buffer, ext, fields, req.user ? req.user.id : null);
+    } catch (e) {
+      return sendPendingError(res, e, ledger);
+    }
+    res.json({ success: true, doc_number: ledger.docNumber, revision: ledger.revision, pi_id: result.piId, storage_path: result.storagePath });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// POST /api/documents/:ledgerId/retry — rebuilds a pending PI's .docx from
+// its saved details and finishes it.
+app.post("/api/documents/:ledgerId/retry", async (req, res) => {
+  try {
+    const { payload, fields, ledger } = await loadPendingPi(req.params.ledgerId);
+    let buf, result;
+    try {
+      buf = await generatePI(payload, logoBuffer, stampBuffer);
+      result = await storeAndFinalizePi(ledger, buf, "docx", fields, req.user ? req.user.id : null);
+    } catch (e) {
+      return sendPendingError(res, e, ledger);
+    }
+    sendFinalPi(res, buf, payload, ledger, result);
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// POST /api/documents/:ledgerId/abandon { reason } — gives up on a pending
+// entry. A new number is voided with the reason on record; a pending
+// revision is voided and the live revision stays as it was.
+app.post("/api/documents/:ledgerId/abandon", express.json(), async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.ledgerId)) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+    await documentNumbering.abandonPending(req.params.ledgerId, req.body && req.body.reason);
+    res.json({ success: true });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// GET /api/sites — clients -> open sites -> sub-projects and open POs, for the
+// "which site / PO is this PI for?" picker. Each client carries its billing
+// details so the buyer block can be filled in.
+app.get("/api/sites", async (req, res) => {
+  try {
+    res.json(await tracker.listSites());
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// GET /api/pis?site_id=<uuid> — every PI on a site for the Revise picker,
+// with can_revise / why_not. GET /api/pis/unlinked — PIs issued before PIs
+// were tied to a site; revising one onto a site links it.
+app.get("/api/pis", async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.query.site_id || ""))) throw badInput("Pick a site first.");
+    res.json({ pis: await tracker.listPisForSite(req.query.site_id) });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+app.get("/api/pis/unlinked", async (req, res) => {
+  try {
+    res.json({ pis: await tracker.listUnlinkedPis() });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// GET /api/documents/:ledgerId — one ledger entry with the form details it
+// was made from, so Revise can load them back into the form.
+const CONTROL_FIELDS = ["mode", "revise_of", "confirm_far_ahead"];
+app.get("/api/documents/:ledgerId", async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.ledgerId)) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+    const row = await documentNumbering.getLedgerRow(req.params.ledgerId);
+    if (!row) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+    const payload = { ...(row.payload || {}) };
+    CONTROL_FIELDS.forEach(k => delete payload[k]);
+    res.json({
+      ledger_id: row.id,
+      doc_type: row.doc_type,
+      doc_number: row.doc_number,
+      revision: row.revision,
+      status: row.status,
+      site_id: row.site_id,
+      po_id: row.po_id,
+      pi_id: row.pi_id,
+      total_amount: row.total_amount,
+      has_file: !!row.storage_path,
+      created_at: row.created_at,
+      finalized_at: row.finalized_at,
+      payload,
+    });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// GET /api/documents/:ledgerId/download — a 5-minute link to the saved file.
+app.get("/api/documents/:ledgerId/download", async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.ledgerId)) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+    const row = await documentNumbering.getLedgerRow(req.params.ledgerId);
+    if (!row || !row.storage_path) throw Object.assign(new Error("No saved file for this document."), { code: "NOT_FOUND" });
+    res.json({ url: await storage.signedUrl(row.storage_path), doc_number: row.doc_number, revision: row.revision });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
 });
 
 // POST /api/save-generated-doc — receives generated PDF (or other files) from client
@@ -613,14 +1017,6 @@ app.get("/api/download-file", (req, res) => {
   }
 });
 
-app.get("/api/config-status", (req, res) => {
-  res.json({
-    gemini: !!process.env.GEMINI_API_KEY,
-    supabase: !!process.env.SUPABASE_URL
-  });
-});
-
-app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Studio5 doc generator API running on port ${PORT}`));
