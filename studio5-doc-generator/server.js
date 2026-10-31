@@ -10,6 +10,7 @@ const generateInvoice = require("./generators/generate_invoice.js");
 const generateChallan = require("./generators/generate_challan.js");
 const documentNumbering = require("./lib/documentNumbering.js");
 const storage = require("./lib/storage.js");
+const tracker = require("./lib/tracker.js");
 const { requireUser, publicAuthConfig } = require("./lib/auth.js");
 const devices = require("./lib/devices.js");
 
@@ -823,6 +824,67 @@ app.post("/api/documents/:ledgerId/abandon", express.json(), async (req, res) =>
     if (!UUID_RE.test(req.params.ledgerId)) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
     await documentNumbering.abandonPending(req.params.ledgerId, req.body && req.body.reason);
     res.json({ success: true });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// GET /api/sites — clients -> open sites -> sub-projects and open POs, for the
+// "which site / PO is this PI for?" picker. Each client carries its billing
+// details so the buyer block can be filled in.
+app.get("/api/sites", async (req, res) => {
+  try {
+    res.json(await tracker.listSites());
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// GET /api/pis?site_id=<uuid> — every PI on a site for the Revise picker,
+// with can_revise / why_not. GET /api/pis/unlinked — PIs issued before PIs
+// were tied to a site; revising one onto a site links it.
+app.get("/api/pis", async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.query.site_id || ""))) throw badInput("Pick a site first.");
+    res.json({ pis: await tracker.listPisForSite(req.query.site_id) });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+app.get("/api/pis/unlinked", async (req, res) => {
+  try {
+    res.json({ pis: await tracker.listUnlinkedPis() });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// GET /api/documents/:ledgerId — one ledger entry with the form details it
+// was made from, so Revise can load them back into the form.
+const CONTROL_FIELDS = ["mode", "revise_of", "confirm_far_ahead"];
+app.get("/api/documents/:ledgerId", async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.ledgerId)) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+    const row = await documentNumbering.getLedgerRow(req.params.ledgerId);
+    if (!row) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+    const payload = { ...(row.payload || {}) };
+    CONTROL_FIELDS.forEach(k => delete payload[k]);
+    res.json({
+      ledger_id: row.id,
+      doc_type: row.doc_type,
+      doc_number: row.doc_number,
+      revision: row.revision,
+      status: row.status,
+      site_id: row.site_id,
+      po_id: row.po_id,
+      pi_id: row.pi_id,
+      total_amount: row.total_amount,
+      has_file: !!row.storage_path,
+      created_at: row.created_at,
+      finalized_at: row.finalized_at,
+      payload,
+    });
   } catch (e) {
     handleLedgerError(res, e);
   }

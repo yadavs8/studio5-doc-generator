@@ -99,6 +99,20 @@ number as pending), then send the PDF to `POST /api/documents/:ledgerId/file`
 
 `GET /api/documents/:ledgerId/download` returns a 5-minute link to any saved revision.
 
+**Lookups for the page's pickers** (read from the po-tracker's tables):
+- `GET /api/sites` — clients → open sites → sub-projects and open POs. Each
+  client carries its legal name, GSTIN and billing address for the buyer block.
+  Inactive clients, closed/completed sites and completed POs are left out.
+- `GET /api/pis?site_id=<uuid>` — every PI on that site, newest first, with
+  `can_revise` and, when not, `why_not` (already a tax invoice, or a revision
+  still pending). `source: "generator"` PIs have a `ledger_id` whose saved
+  form loads back for **Revise**. `source: "tracker"` PIs were typed into the
+  tracker by hand: generate a **Final** with that same number and it links to
+  them instead of adding a second PI.
+- `GET /api/pis/unlinked` — PIs issued before PIs were tied to a site.
+  Revising one with a `site_id` links it from then on.
+- `GET /api/documents/:ledgerId` — one entry with the form details it was made from.
+
 ## Sign-in
 
 Everything except the page itself, `/assets`, `/manifest.json`, `/health`,
