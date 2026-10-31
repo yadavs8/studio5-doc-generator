@@ -452,6 +452,29 @@
   .totals td:last-child { text-align: right; font-weight: 600; }
   .footer-note { font-size: 12px; color: var(--muted); margin-top: 10px; }
   .status { font-size: 12px; color: var(--good); margin-left: 10px; }
+  .status.error { color: #b0413e; }
+  .pi-mode-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 4px; }
+  .pi-mode-option {
+    display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 12px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px; background: #fff; color: inherit; font-weight: 400;
+  }
+  .pi-mode-option input { width: auto; margin-top: 3px; }
+  .pi-mode-option strong { display: block; font-size: 13px; color: var(--accent); }
+  .pi-mode-option small { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.4; margin-top: 2px; }
+  .pi-mode-option:has(input:checked) { border-color: var(--accent); background: var(--accent-light); }
+  .pi-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .pi-chip {
+    border: 1px solid var(--accent); background: #fff; color: var(--accent); border-radius: 999px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .pi-chip:hover { background: var(--accent-light); }
+  .doc-badge { font-weight: 600; white-space: nowrap; }
+  .doc-badge.issued { color: #1a7f37; }
+  .doc-badge.pending { color: #b45309; }
+  .doc-badge.superseded { color: var(--muted); }
+  .doc-badge.void { color: #b0413e; }
+  .doc-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .doc-actions .btn { margin: 0; }
   .item-actions { text-align: center; width: 85px; white-space: nowrap; }
   .remove-row { color: #b0413e; cursor: pointer; font-weight: 700; margin-left: 2px; }
   .lib-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -461,7 +484,7 @@
   @media (max-width: 768px) {
     body { padding: 12px; }
     .wrap { width: 100%; }
-    .row2, .row3, .addr-grid { grid-template-columns: 1fr; gap: 8px; }
+    .row2, .row3, .addr-grid, .pi-mode-options { grid-template-columns: 1fr; gap: 8px; }
     .card { padding: 14px; }
     .totals table { width: 100%; }
     .totals { justify-content: stretch; }
@@ -771,11 +794,47 @@
 
   <!-- PROFORMA INVOICE PANEL -->
   <div class="panel" id="panel-generate-pi">
+    <div class="card" id="pi-mode-card" style="display:none;">
+      <h2>What are you making?</h2>
+      <div class="pi-mode-options" role="radiogroup" aria-label="Draft, Final or Revise">
+        <label class="pi-mode-option"><input type="radio" name="pi-mode" value="draft" onchange="onPIModeChange()">
+          <span><strong>Draft</strong><small>A file to check or send for approval. No number used, nothing saved.</small></span></label>
+        <label class="pi-mode-option"><input type="radio" name="pi-mode" value="final" checked onchange="onPIModeChange()">
+          <span><strong>Final</strong><small>Takes the next number, saved online and added to the client's statement.</small></span></label>
+        <label class="pi-mode-option"><input type="radio" name="pi-mode" value="revise" onchange="onPIModeChange()">
+          <span><strong>Revise a PI</strong><small>Same number, next revision. The statement shows the new amount; old versions are kept.</small></span></label>
+      </div>
+      <div id="pi-link-fields">
+        <div class="row2">
+          <div><label for="pi-client">Client</label><select id="pi-client" onchange="onPIClientChange()"></select></div>
+          <div><label for="pi-site">Site</label><select id="pi-site" onchange="onPISiteChange()"></select></div>
+        </div>
+        <div id="pi-revise-wrap" style="display:none;">
+          <label for="pi-revise-of">PI to revise</label>
+          <select id="pi-revise-of" onchange="onPIReviseChange()"></select>
+          <div class="footer-note" id="pi-revise-note"></div>
+        </div>
+        <div class="row2">
+          <div><label for="pi-po">PO / Work Order (optional)</label><select id="pi-po"></select></div>
+          <div id="pi-sub-wrap" style="display:none;"><label for="pi-sub">Sub-project (optional)</label><select id="pi-sub"></select></div>
+        </div>
+        <label for="pi-work-status">Work status for the statement</label>
+        <div class="pi-chips">
+          <button type="button" class="pi-chip" onclick="setPIWorkStatus('100% Work Done')">100% Work Done</button>
+          <button type="button" class="pi-chip" onclick="setPIWorkStatus('Work in Progress')">Work in Progress</button>
+          <button type="button" class="pi-chip" onclick="setPIWorkStatus('Hold by Client')">Hold by Client</button>
+        </div>
+        <input id="pi-work-status" placeholder="e.g. 85% Work Done, rest 15% on hold by client">
+        <div class="footer-note" id="pi-work-status-note"></div>
+      </div>
+      <div class="footer-note" id="pi-link-status"></div>
+    </div>
+
     <div class="card">
       <h2>1. Issuing Address</h2>
       <select id="pi-address" onchange="autofillNumber('pi-no','pi',this.value)"></select>
       <div class="row2">
-        <div><label>P.I. No.</label><input id="pi-no" placeholder="26-27/1101" oninput="this.dataset.autofilled=''"></div>
+        <div><label>P.I. No.</label><input id="pi-no" placeholder="26-27/1101" oninput="this.dataset.autofilled=''"><div class="footer-note" id="pi-no-note" style="margin-top:4px;"></div></div>
         <div><label>P.I. Date</label><input id="pi-date" type="date"></div>
       </div>
       <label>Bank Account to show</label>
@@ -842,7 +901,7 @@
       <span class="status" id="pi-gen-status"></span>
     </div>
     <div style="font-size:12px; color:#64748b; margin-top:8px; display:flex; align-items:center; gap:6px;">
-      <span>📁 <strong>Organized Auto-Save:</strong> Every Proforma Invoice automatically saves to <code>generated_docs/proforma_invoices/YYYY-MM-DD/</code> with date, section name &amp; document number in filename.</span>
+      <span id="pi-save-note">📁 <strong>Organized Auto-Save:</strong> Every Proforma Invoice automatically saves to <code>generated_docs/proforma_invoices/YYYY-MM-DD/</code> with date, section name &amp; document number in filename.</span>
     </div>
 
     <div class="card" id="pi-output-card" style="display:none; margin-top:16px;">
@@ -1306,20 +1365,32 @@ async function loadRecentDocuments() {
         ? Number(d.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         : '—';
       const date = d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN') : '—';
-      const statusBadge = d.status === 'void'
-        ? '<span style="color:#b0413e; font-weight:600;">Void' + (d.void_reason ? ' — ' + escapeHtml(d.void_reason) : '') + '</span>'
-        : '<span style="color:#1a7f37; font-weight:600;">Issued</span>';
-      const voidBtn = d.status === 'issued'
-        ? `<button class="btn secondary small" onclick="voidDocumentPrompt('${d.doc_type}', '${escapeHtml(d.doc_number)}')">Mark void</button>`
-        : '';
+      const status = d.status || 'issued';
+      const badgeText = {
+        issued: 'Issued',
+        pending: 'Pending — not saved yet',
+        superseded: 'Replaced by a newer revision',
+        void: 'Void' + (d.void_reason ? ' — ' + d.void_reason : '')
+      }[status] || status;
+      const statusBadge = '<span class="doc-badge ' + status + '">' + escapeHtml(badgeText) + '</span>';
+      const label = d.doc_number + (d.revision > 1 ? ' r' + d.revision : '');
+      const actions = [];
+      if (d.storage_path) actions.push(`<button class="btn secondary small" onclick="downloadSavedDoc('${d.id}')">Download</button>`);
+      if (status === 'pending' && d.doc_type === 'pi') {
+        actions.push(`<button class="btn secondary small" onclick="retryPendingDoc('${d.id}')">Retry</button>`);
+        actions.push(`<button class="btn secondary small" onclick="abandonPendingDoc('${d.id}', '${escapeHtml(label).replace(/'/g, '')}')">Discard</button>`);
+      }
+      if (status === 'issued') {
+        actions.push(`<button class="btn secondary small" onclick="voidDocumentPrompt('${d.doc_type}', '${escapeHtml(d.doc_number)}')">Mark void</button>`);
+      }
       tr.innerHTML =
-        '<td style="font-family:monospace;">' + escapeHtml(d.doc_number) + '</td>' +
+        '<td style="font-family:monospace; white-space:nowrap;">' + escapeHtml(label) + '</td>' +
         '<td>' + (DOC_TYPE_LABELS[d.doc_type] || d.doc_type) + '</td>' +
         '<td>' + date + '</td>' +
         '<td>' + escapeHtml(d.counterparty_name || '—') + '</td>' +
         '<td style="text-align:right;">' + amt + '</td>' +
         '<td>' + statusBadge + '</td>' +
-        '<td>' + voidBtn + '</td>';
+        '<td><div class="doc-actions">' + actions.join('') + '</div></td>';
       tbody.appendChild(tr);
     });
   } catch (e) {
@@ -2985,65 +3056,9 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
 
   statusEl.textContent = 'Rendering PDF...';
 
-  // Create temporary container for html2pdf
-  const printWrapper = document.createElement('div');
-  printWrapper.id = 'temp-pdf-render-wrapper';
-  printWrapper.style.position = 'fixed';
-  printWrapper.style.top = '0';
-  printWrapper.style.left = '0';
-  printWrapper.style.width = '800px';
-  printWrapper.style.zIndex = '-9999';
-  printWrapper.style.background = '#ffffff';
-  printWrapper.innerHTML = buildDocumentPrintHTML(docType, payload);
-  document.body.appendChild(printWrapper);
-
-  // Ensure all images are completely loaded before generating canvas
-  const imgs = Array.from(printWrapper.querySelectorAll('img'));
-  await Promise.all(imgs.map(img => {
-    if (img.complete) return Promise.resolve();
-    return new Promise(resolve => {
-      img.onload = resolve;
-      img.onerror = resolve;
-      setTimeout(resolve, 600);
-    });
-  }));
-
-  const opt = {
-    margin: [8, 8, 8, 8],
-    filename: cleanFilename,
-    image: { type: 'jpeg', quality: 0.98 },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: 800,
-      logging: false,
-      onclone: (clonedDoc) => {
-        const el = clonedDoc.getElementById('temp-pdf-render-wrapper');
-        if (el) {
-          el.style.position = 'static';
-          el.style.zIndex = '1';
-        }
-      }
-    },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  };
-
   try {
-    const worker = html2pdf().set(opt).from(printWrapper);
-    const pdfBlob = await worker.output('blob');
-
-    // Trigger browser download
-    const blobUrl = URL.createObjectURL(pdfBlob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = cleanFilename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
+    const pdfBlob = await renderDocumentPDF(docType, payload, cleanFilename);
+    downloadBlob(pdfBlob, cleanFilename);
 
     // Auto-save to server dated folder
     let savedMsg = '';
@@ -3076,6 +3091,70 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
   } catch (err) {
     console.error('PDF generation error:', err);
     statusEl.textContent = 'PDF generation error: ' + err.message;
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
+}
+
+// Renders a document's print layout to a PDF blob with html2pdf.
+async function renderDocumentPDF(docType, payload, filename) {
+  // Create temporary container for html2pdf
+  const printWrapper = document.createElement('div');
+  printWrapper.id = 'temp-pdf-render-wrapper';
+  printWrapper.style.position = 'fixed';
+  printWrapper.style.top = '0';
+  printWrapper.style.left = '0';
+  printWrapper.style.width = '800px';
+  printWrapper.style.zIndex = '-9999';
+  printWrapper.style.background = '#ffffff';
+  printWrapper.innerHTML = buildDocumentPrintHTML(docType, payload);
+  document.body.appendChild(printWrapper);
+
+  // Ensure all images are completely loaded before generating canvas
+  const imgs = Array.from(printWrapper.querySelectorAll('img'));
+  await Promise.all(imgs.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(resolve => {
+      img.onload = resolve;
+      img.onerror = resolve;
+      setTimeout(resolve, 600);
+    });
+  }));
+
+  const opt = {
+    margin: [8, 8, 8, 8],
+    filename: filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: 800,
+      logging: false,
+      onclone: (clonedDoc) => {
+        const el = clonedDoc.getElementById('temp-pdf-render-wrapper');
+        if (el) {
+          el.style.position = 'static';
+          el.style.zIndex = '1';
+        }
+      }
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    return await html2pdf().set(opt).from(printWrapper).output('blob');
   } finally {
     if (printWrapper.parentNode) {
       document.body.removeChild(printWrapper);
@@ -3550,6 +3629,9 @@ async function generatePI(format = 'docx') {
     showDocumentPreview('pi', payload);
     return;
   }
+  // Draft / Final / Revise, once the server is linked to the PO tracker.
+  if (piLink.available) return generatePIWithMode(payload, format);
+
   if (format === 'pdf') {
     await generateDocumentAsPDF('/generate/proforma-invoice', payload, 'Proforma_Invoice', 'pi-gen-status', 'pi', 'pi-no');
     return;
@@ -3560,6 +3642,449 @@ async function generatePI(format = 'docx') {
     document.getElementById('pi-no').value = '';
     autofillNumber('pi-no', 'pi', payload.issuing_address_key);
   }
+}
+
+// ===== PI: Draft / Final / Revise, linked to the PO tracker =====
+// The server ties each Final or revised PI to a client site in the PO
+// tracker: the file is saved online and the PI shows on that site's
+// statement. If the server has no tracker link (e.g. running on this PC
+// without Supabase), the card stays hidden and PIs generate as before.
+const piLink = { available: false, clients: [], pis: [], unlinked: [] };
+
+function piMode() {
+  const checked = document.querySelector('input[name="pi-mode"]:checked');
+  return checked ? checked.value : 'final';
+}
+
+function setPIStatus(html, isError) {
+  const el = document.getElementById('pi-gen-status');
+  el.classList.toggle('error', !!isError);
+  el.innerHTML = html;
+}
+
+function fillSelect(sel, items, placeholder) {
+  sel.innerHTML = '';
+  const first = document.createElement('option');
+  first.value = '';
+  first.textContent = placeholder;
+  sel.appendChild(first);
+  items.forEach(it => {
+    const o = document.createElement('option');
+    o.value = it.value;
+    o.textContent = it.label;
+    if (it.disabled) o.disabled = true;
+    sel.appendChild(o);
+  });
+}
+
+async function initPILink() {
+  if (!backendUrl) return;
+  try {
+    const res = await fetch(backendUrl + '/api/sites');
+    if (!res.ok) return;
+    piLink.clients = await res.json();
+    piLink.available = true;
+  } catch (e) {
+    return;
+  }
+  document.getElementById('pi-mode-card').style.display = '';
+  document.getElementById('pi-save-note').innerHTML =
+    '☁️ <strong>Final and revised PIs are saved online</strong> against the client site and appear on its statement in the PO Tracker. Drafts are not saved.';
+  fillSelect(document.getElementById('pi-client'),
+    piLink.clients.map(c => ({ value: c.client_id, label: c.name })),
+    piLink.clients.length ? '— Choose client —' : 'No clients in the PO Tracker yet');
+  // The autosaved draft was restored before these lists existed; put its
+  // client / site / PO picks back now.
+  let saved = {};
+  try { saved = (JSON.parse(localStorage.getItem(DRAFT_KEYS.pi) || '{}').fields) || {}; } catch (e) {}
+  const pick = (id) => { const el = document.getElementById(id); if (saved[id] && [...el.options].some(o => o.value === saved[id])) el.value = saved[id]; };
+  pick('pi-client');
+  onPIClientChange(true);
+  pick('pi-site');
+  onPISiteChange();
+  pick('pi-po');
+  pick('pi-sub');
+  onPIModeChange();
+}
+
+function currentPIClient() {
+  return piLink.clients.find(c => c.client_id === document.getElementById('pi-client').value) || null;
+}
+function currentPISite() {
+  const c = currentPIClient();
+  return c ? c.sites.find(s => s.site_id === document.getElementById('pi-site').value) || null : null;
+}
+
+// Picking a client fills the buyer block from the tracker's client record.
+function onPIClientChange(quiet) {
+  const c = currentPIClient();
+  const siteSel = document.getElementById('pi-site');
+  fillSelect(siteSel, c ? c.sites.map(s => ({ value: s.site_id, label: s.name })) : [], c ? '— Choose site —' : '— Choose client first —');
+  if (c && c.sites.length === 1) siteSel.value = c.sites[0].site_id;
+  if (c && !quiet) {
+    document.getElementById('pi-buyer-name').value = c.legal_name || c.name || '';
+    if (c.billing_address) document.getElementById('pi-buyer-address').value = c.billing_address;
+    document.getElementById('pi-buyer-gstin').value = c.gstin || '';
+    if (c.contact_person && !document.getElementById('pi-buyer-attn').value) {
+      document.getElementById('pi-buyer-attn').value = c.contact_person;
+    }
+  }
+  onPISiteChange();
+}
+
+function onPISiteChange() {
+  const s = currentPISite();
+  fillSelect(document.getElementById('pi-po'),
+    s ? s.pos.map(p => ({ value: p.po_id, label: p.po_number + (p.po_date ? ' · ' + String(p.po_date).slice(0, 10) : '') + (p.scope ? ' · ' + p.scope : '') })) : [],
+    s && s.pos.length ? '— No PO / WO —' : 'No open POs on this site');
+  const subs = s ? s.sub_projects : [];
+  document.getElementById('pi-sub-wrap').style.display = subs.length ? '' : 'none';
+  fillSelect(document.getElementById('pi-sub'), subs.map(sp => ({ value: sp.sub_project_id, label: sp.name })), '— Whole site —');
+  if (piMode() === 'revise') loadPIReviseOptions();
+}
+
+function onPIModeChange() {
+  const mode = piMode();
+  const cameFromRevise = piLink.lastMode === 'revise';
+  piLink.lastMode = mode;
+  const linked = mode !== 'draft';
+  document.getElementById('pi-link-fields').style.display = linked ? '' : 'none';
+  document.getElementById('pi-revise-wrap').style.display = mode === 'revise' ? '' : 'none';
+  const noField = document.getElementById('pi-no');
+  const noNote = document.getElementById('pi-no-note');
+  noField.disabled = mode !== 'final';
+  if (mode === 'draft') {
+    noNote.textContent = 'Drafts are numbered DRAFT — no number is used.';
+  } else if (mode === 'revise') {
+    noNote.textContent = 'Keeps the number of the PI being revised.';
+    loadPIReviseOptions();
+  } else {
+    noNote.textContent = '';
+    // Revise put the old PI's number in the box; a Final needs a new one.
+    if (cameFromRevise) {
+      noField.value = '';
+      noField.dataset.autofilled = '';
+    }
+    autofillNumber('pi-no', 'pi', document.getElementById('pi-address').value);
+  }
+  document.getElementById('pi-work-status-note').textContent = mode === 'revise'
+    ? 'Leave empty to keep the status already on the statement.' : '';
+}
+
+function setPIWorkStatus(text) {
+  document.getElementById('pi-work-status').value = text;
+}
+
+// The Revise picker: PIs on the chosen site, plus older PIs made before PIs
+// were tied to a site (revising one onto this site links it).
+async function loadPIReviseOptions() {
+  const sel = document.getElementById('pi-revise-of');
+  const note = document.getElementById('pi-revise-note');
+  const s = currentPISite();
+  piLink.pis = [];
+  sel.innerHTML = '';
+  note.textContent = '';
+  if (!s) { fillSelect(sel, [], '— Choose client and site first —'); return; }
+  fillSelect(sel, [], 'Loading PIs…');
+  try {
+    const [onSite, older] = await Promise.all([
+      fetch(backendUrl + '/api/pis?site_id=' + encodeURIComponent(s.site_id)).then(r => r.ok ? r.json() : { pis: [] }),
+      fetch(backendUrl + '/api/pis/unlinked').then(r => r.ok ? r.json() : { pis: [] })
+    ]);
+    if (currentPISite() !== s) return; // site changed meanwhile
+    piLink.pis = onSite.pis;
+    piLink.unlinked = older.pis;
+    const fmtAmt = a => a != null ? ' · ₹' + Number(a).toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '';
+    fillSelect(sel, [], onSite.pis.length || older.pis.length ? '— Choose the PI to revise —' : 'No PIs to revise yet');
+    if (onSite.pis.length) {
+      const g = document.createElement('optgroup');
+      g.label = 'PIs on ' + s.name;
+      onSite.pis.forEach(p => {
+        const o = document.createElement('option');
+        o.value = 'site:' + p.pi_id;
+        o.textContent = p.pi_number + (p.revision > 1 ? ' (r' + p.revision + ')' : '') + ' · ' + String(p.pi_date || '').slice(0, 10) + fmtAmt(p.amount) +
+          (p.work_status ? ' · ' + p.work_status : '') + (p.can_revise ? '' : ' — ' + p.why_not);
+        o.disabled = !p.can_revise;
+        g.appendChild(o);
+      });
+      sel.appendChild(g);
+    }
+    if (older.pis.length) {
+      const g = document.createElement('optgroup');
+      g.label = 'Older PIs not yet tied to a site';
+      older.pis.forEach(p => {
+        const o = document.createElement('option');
+        o.value = 'old:' + p.ledger_id;
+        o.textContent = p.pi_number + ' · ' + (p.buyer || '') + fmtAmt(p.amount);
+        g.appendChild(o);
+      });
+      sel.appendChild(g);
+    }
+  } catch (e) {
+    fillSelect(sel, [], 'Could not load PIs');
+  }
+}
+
+function selectedPIRevision() {
+  const v = document.getElementById('pi-revise-of').value;
+  if (v.startsWith('site:')) {
+    const p = piLink.pis.find(x => x.pi_id === v.slice(5));
+    return p ? { kind: p.source, pi: p, ledgerId: p.ledger_id, number: p.pi_number } : null;
+  }
+  if (v.startsWith('old:')) {
+    const p = piLink.unlinked.find(x => x.ledger_id === v.slice(4));
+    return p ? { kind: 'generator', ledgerId: p.ledger_id, number: p.pi_number } : null;
+  }
+  return null;
+}
+
+// Loads the chosen PI back into the form, ready to edit.
+async function onPIReviseChange() {
+  const note = document.getElementById('pi-revise-note');
+  const r = selectedPIRevision();
+  note.textContent = '';
+  if (!r) return;
+  document.getElementById('pi-no').value = r.number;
+  if (r.pi && r.pi.po_id) document.getElementById('pi-po').value = r.pi.po_id;
+  if (r.pi && r.pi.sub_project_id) document.getElementById('pi-sub').value = r.pi.sub_project_id;
+  if (r.kind === 'tracker') {
+    note.textContent = 'This PI was entered in the PO Tracker by hand, so there is no saved form to load. Fill in the PI below — it will be issued as ' +
+      r.number + ' and replace the tracker entry.';
+    return;
+  }
+  note.textContent = 'Loading ' + r.number + '…';
+  try {
+    const res = await fetch(backendUrl + '/api/documents/' + r.ledgerId);
+    if (!res.ok) throw new Error('could not load it');
+    const doc = await res.json();
+    loadPIPayloadIntoForm(doc.payload);
+    document.getElementById('pi-no').value = r.number;
+    note.textContent = 'Loaded ' + r.number + (doc.revision > 1 ? ' revision ' + doc.revision : '') +
+      '. Change what you need, then generate — it becomes revision ' + (doc.revision + 1) + '.';
+  } catch (e) {
+    note.textContent = 'Could not load ' + r.number + ' (' + e.message + '). You can still fill the form by hand.';
+  }
+}
+
+function loadPIPayloadIntoForm(p) {
+  if (!p) return;
+  restoreItemsForDraft('pi', (p.sections || []).map(s => ({
+    name: s.name || '',
+    hasRooms: !!s.has_rooms,
+    items: (s.items || []).map(it => ({ particulars: it.particulars, qty: it.qty, uom: it.uom, rate: it.rate, rooms: it.rooms, extra: it.extra }))
+  })), p.extra_columns || []);
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  if (p.issuing_address_key && addresses[p.issuing_address_key]) set('pi-address', p.issuing_address_key);
+  set('pi-date', p.pi_date);
+  if (p.bank && p.bank.name) set('pi-bank', /IDFC/i.test(p.bank.name) ? 'idfc' : 'hdfc');
+  if (p.buyer) {
+    set('pi-buyer-name', p.buyer.name);
+    set('pi-buyer-address', p.buyer.address);
+    set('pi-buyer-gstin', p.buyer.gstin);
+    set('pi-buyer-attn', p.buyer.attn);
+  }
+  set('pi-subject', p.subject);
+  set('pi-gst-pct', p.gst_pct);
+  set('pi-payment-terms', p.payment_terms);
+  recalcPI();
+}
+
+// Checks the picker and adds what the server needs; null (with a message
+// shown) if something is missing.
+function addPILinkFields(payload) {
+  const mode = piMode();
+  if (mode === 'draft') return { ...payload, mode: 'draft' };
+  const s = currentPISite();
+  if (!s) { setPIStatus('Choose the client and site this PI is for.', true); return null; }
+  if (!payload.pi_date) { setPIStatus('Enter the P.I. date.', true); return null; }
+  if (!(payload.grand_total > 0)) { setPIStatus('The PI total must be more than zero.', true); return null; }
+  const out = {
+    ...payload,
+    mode,
+    site_id: s.site_id,
+    po_id: document.getElementById('pi-po').value || null,
+    sub_project_id: document.getElementById('pi-sub').value || null,
+    work_status: document.getElementById('pi-work-status').value.trim()
+  };
+  if (mode === 'revise') {
+    const r = selectedPIRevision();
+    if (!r) { setPIStatus('Choose the PI to revise.', true); return null; }
+    if (r.kind === 'tracker') {
+      // A hand-typed tracker PI has no ledger entry to revise: issuing a
+      // Final with its number links to it instead.
+      out.mode = 'final';
+      out.pi_no = r.number;
+    } else {
+      out.revise_of = r.number;
+    }
+  } else if (!out.work_status && !confirm('No work status entered — the statement will show this PI without one. Continue?')) {
+    return null;
+  }
+  return out;
+}
+
+async function postPI(body, query) {
+  const res = await fetch(backendUrl + '/generate/proforma-invoice' + (query || ''), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const isJson = (res.headers.get('content-type') || '').includes('json');
+  const data = isJson ? await res.json().catch(() => ({})) : null;
+  return { res, data };
+}
+
+async function generatePIWithMode(rawPayload, format) {
+  const payload = addPILinkFields(rawPayload);
+  if (!payload) return;
+  const mode = payload.mode;
+
+  // Draft PDF: drawn here, nothing sent to the server.
+  if (mode === 'draft' && format === 'pdf') {
+    const filename = buildDescriptiveDocFilename('pi', payload, 'DRAFT', 'pdf');
+    setPIStatus('Rendering draft PDF…');
+    try {
+      downloadBlob(await renderDocumentPDF('pi', { ...payload, pi_no: 'DRAFT' }, filename), filename);
+      setPIStatus('✓ Draft PDF downloaded — nothing was saved or numbered.');
+    } catch (e) {
+      setPIStatus('PDF error: ' + e.message, true);
+    }
+    return;
+  }
+
+  setPIStatus(mode === 'draft' ? 'Making draft…' : 'Generating and saving…');
+  let { res, data } = await postPI(payload, format === 'pdf' ? '?format=json' : '');
+  if (res.status === 409 && data && data.code === 'NUMBER_FAR_AHEAD') {
+    if (!confirm(data.error)) { setPIStatus('Not generated — check the P.I. No.', true); return; }
+    ({ res, data } = await postPI({ ...payload, confirm_far_ahead: true }, format === 'pdf' ? '?format=json' : ''));
+  }
+  // Usually a number left in the box from an earlier PI (or a restored
+  // draft): offer the next free one rather than making the user find it.
+  if (res.status === 409 && data && data.code === 'DUPLICATE_NUMBER' && payload.mode === 'final' && !payload.revise_of) {
+    if (!confirm(data.error + '\n\nUse the next free number instead?')) { setPIStatus(escapeHtml(data.error), true); return; }
+    ({ res, data } = await postPI({ ...payload, pi_no: '' }, format === 'pdf' ? '?format=json' : ''));
+  }
+  if (!res.ok) return showPIError(data, res);
+
+  if (mode === 'draft') {
+    downloadBlob(await res.blob(), filenameFromResponse(res) || buildDescriptiveDocFilename('pi', payload, 'DRAFT', 'docx'));
+    setPIStatus('✓ Draft downloaded — nothing was saved or numbered.');
+    return;
+  }
+
+  let docNumber, revision;
+  if (format === 'pdf') {
+    docNumber = data.docNumber;
+    revision = data.revision;
+    const label = revision > 1 ? docNumber + ' r' + revision : docNumber;
+    const filename = buildDescriptiveDocFilename('pi', payload, label, 'pdf');
+    setPIStatus('Rendering PDF for ' + escapeHtml(label) + '…');
+    let blob;
+    try {
+      blob = await renderDocumentPDF('pi', { ...payload, pi_no: docNumber }, filename);
+    } catch (e) {
+      return showPIPending({ ledger_id: data.ledger_id, doc_number: docNumber, revision, error: 'The PDF could not be drawn (' + e.message + ').' });
+    }
+    downloadBlob(blob, filename);
+    const fd = new FormData();
+    fd.append('file', blob, filename);
+    const up = await fetch(backendUrl + '/api/documents/' + data.ledger_id + '/file', { method: 'POST', body: fd });
+    if (!up.ok) {
+      const err = await up.json().catch(() => ({}));
+      return showPIPending({ ledger_id: data.ledger_id, doc_number: docNumber, revision, ...err, error: err.error || 'The PDF could not be saved online.' });
+    }
+  } else {
+    docNumber = res.headers.get('X-Document-Number');
+    revision = Number(res.headers.get('X-Revision') || 1);
+    downloadBlob(await res.blob(), filenameFromResponse(res) || buildDescriptiveDocFilename('pi', payload, docNumber, 'docx'));
+  }
+
+  const s = currentPISite();
+  setPIStatus('✓ ' + escapeHtml(docNumber) + (revision > 1 ? ' revision ' + revision : '') +
+    ' saved to ' + escapeHtml(s ? s.name : 'the site') + ' and added to its statement in the PO Tracker.');
+  clearDraft('pi');
+  document.getElementById('pi-work-status').value = '';
+  refreshPINumberAfterUse();
+  if (typeof loadRecentDocuments === 'function') loadRecentDocuments();
+}
+
+// Once a number is taken (issued or pending), the box must not keep offering
+// it: a Final gets the next number, a Revise reloads its list.
+function refreshPINumberAfterUse() {
+  if (piMode() === 'final') {
+    const f = document.getElementById('pi-no');
+    f.value = '';
+    f.dataset.autofilled = '';
+    autofillNumber('pi-no', 'pi', document.getElementById('pi-address').value);
+  } else if (piMode() === 'revise') {
+    loadPIReviseOptions();
+  }
+}
+
+function filenameFromResponse(res) {
+  const disp = res.headers.get('Content-Disposition') || '';
+  return disp.includes('filename="') ? disp.split('filename="')[1].split('"')[0] : '';
+}
+
+function showPIError(data, res) {
+  if (data && data.code === 'SAVED_AS_PENDING') return showPIPending(data);
+  setPIStatus('Error: ' + escapeHtml((data && data.error) || res.statusText || 'could not generate'), true);
+}
+
+// The number is taken but the file isn't saved: say so, and offer to finish
+// or drop it right here (the Library tab lists it too).
+function showPIPending(info) {
+  const label = info.doc_number + (info.revision > 1 ? ' revision ' + info.revision : '');
+  // The server's own message already explains the pending state.
+  const message = info.code === 'SAVED_AS_PENDING'
+    ? escapeHtml(info.error)
+    : escapeHtml(label) + ' was not saved: ' + escapeHtml(info.error || '') + ' It is kept as <strong>pending</strong>.';
+  setPIStatus(
+    '⚠ ' + message + ' ' +
+    '<button type="button" class="btn secondary small" onclick="retryPendingDoc(\'' + info.ledger_id + '\')">Retry</button> ' +
+    '<button type="button" class="btn secondary small" onclick="abandonPendingDoc(\'' + info.ledger_id + '\', \'' + escapeHtml(label).replace(/'/g, '') + '\')">Discard</button>',
+    true);
+  refreshPINumberAfterUse();
+  if (typeof loadRecentDocuments === 'function') loadRecentDocuments();
+}
+
+async function retryPendingDoc(ledgerId) {
+  setPIStatus('Retrying…');
+  const res = await fetch(backendUrl + '/api/documents/' + ledgerId + '/retry', { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    showPIError(data, res);
+    return;
+  }
+  downloadBlob(await res.blob(), filenameFromResponse(res) || 'Proforma_Invoice.docx');
+  setPIStatus('✓ ' + escapeHtml(res.headers.get('X-Document-Number') || 'PI') + ' saved and added to the statement.');
+  loadRecentDocuments();
+  if (piLink.available) refreshPINumberAfterUse();
+}
+
+async function abandonPendingDoc(ledgerId, label) {
+  const reason = prompt('Discard ' + label + '? A new number is voided with this reason; a pending revision is dropped and the earlier version stays live.\n\nReason:');
+  if (reason === null) return;
+  const res = await fetch(backendUrl + '/api/documents/' + ledgerId + '/abandon', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason })
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert('Could not discard: ' + (data.error || res.statusText));
+    return;
+  }
+  setPIStatus(escapeHtml(label) + ' discarded.');
+  loadRecentDocuments();
+  if (piLink.available) refreshPINumberAfterUse();
+}
+
+async function downloadSavedDoc(ledgerId) {
+  const res = await fetch(backendUrl + '/api/documents/' + ledgerId + '/download');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.url) { alert('Could not get the file: ' + (data.error || res.statusText)); return; }
+  window.open(data.url, '_blank', 'noopener');
 }
 
 function copyPIOutput() {
@@ -4559,6 +5084,7 @@ loadBackendUrl().then(() => {
     autofillNumber('pi-no', 'pi', document.getElementById('pi-address').value);
     autofillNumber('inv-no', 'invoice', document.getElementById('inv-address').value);
     autofillNumber('challan-no', 'challan', document.getElementById('challan-address').value);
+    initPILink();
   });
 });
 loadGeminiKey();
