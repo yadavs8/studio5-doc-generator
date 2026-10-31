@@ -9,20 +9,143 @@ const generatePI = require("./generators/generate_pi.js");
 const generateInvoice = require("./generators/generate_invoice.js");
 const generateChallan = require("./generators/generate_challan.js");
 const documentNumbering = require("./lib/documentNumbering.js");
+const { requireUser, publicAuthConfig } = require("./lib/auth.js");
+const devices = require("./lib/devices.js");
 
 const app = express();
+// Render sits behind one proxy; trust it so req.ip is the caller, not the
+// proxy (the sign-in rate limits below count per caller).
+if (process.env.RENDER) app.set("trust proxy", 1);
+
+// Only these sites may call the API from a browser. The tool itself is
+// served by this same server, so it is same-origin and needs no entry here;
+// add other front-ends (e.g. the po-tracker's GitHub Pages site) through
+// CORS_ORIGINS, comma-separated.
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000")
+    .split(",")
+    .map(o => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean)
+);
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-gemini-key");
-  if (req.method === "OPTIONS") return res.sendStatus(200);
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-gemini-key, x-record-only");
+    res.setHeader("Access-Control-Expose-Headers", "X-Document-Number, Content-Disposition");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
-app.use(express.json({ limit: "25mb" }));
-app.use(express.static(path.join(__dirname)));
+
+// Public: the page itself, its assets, and what it needs before sign-in.
+// Only named files are served — serving the whole folder used to expose
+// generated_docs/ (every saved PI/invoice) to anyone who guessed a path.
+app.use("/assets", express.static(path.join(__dirname, "assets")));
+app.get("/manifest.json", (req, res) => res.sendFile(path.join(__dirname, "manifest.json")));
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "studio5_doc_generator.html"));
 });
+app.get("/health", (req, res) => res.json({ status: "ok" }));
+app.get("/api/auth-config", (req, res) => res.json(publicAuthConfig()));
+app.get("/api/config-status", (req, res) => {
+  res.json({
+    gemini: !!process.env.GEMINI_API_KEY,
+    supabase: !!process.env.SUPABASE_URL,
+    auth: publicAuthConfig().enabled
+  });
+});
+
+// ----- Sign-in: email code once per device, then a 4-digit MPIN -----
+// These run before sign-in exists, so each is rate-limited per caller on top
+// of Supabase's own limits and the 5-wrong-MPIN device lock.
+const rateBuckets = new Map();
+function rateLimit(name, perMinute) {
+  return (req, res, next) => {
+    const key = `${name}:${req.ip}`;
+    const now = Date.now();
+    const b = rateBuckets.get(key);
+    if (!b || b.resetAt <= now) {
+      rateBuckets.set(key, { count: 1, resetAt: now + 60 * 1000 });
+      if (rateBuckets.size > 5000) for (const [k, v] of rateBuckets) if (v.resetAt <= now) rateBuckets.delete(k);
+      return next();
+    }
+    if (++b.count > perMinute) {
+      return res.status(429).json({ error: "Too many attempts. Please wait a minute and try again.", code: "RATE_LIMITED" });
+    }
+    next();
+  };
+}
+const smallJson = express.json({ limit: "10kb" });
+
+function handleDeviceError(res, e) {
+  if (e.status) return res.status(e.status).json({ error: e.message, code: e.code });
+  console.error("[devices]", e);
+  res.status(500).json({ error: "Sign-in failed on the server. Please try again." });
+}
+
+app.post("/api/auth/otp/start", rateLimit("otp-start", 5), smallJson, async (req, res) => {
+  try {
+    await devices.startOtp(req.body.email);
+    res.json({ ok: true });
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.post("/api/auth/otp/verify", rateLimit("otp-verify", 10), smallJson, async (req, res) => {
+  try {
+    const { email, code, device_name, replace_device_id } = req.body;
+    res.json(await devices.verifyOtp(email, code, device_name, replace_device_id));
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.post("/api/auth/pin/unlock", rateLimit("pin-unlock", 20), smallJson, async (req, res) => {
+  try {
+    const { device_id, device_secret, pin } = req.body;
+    res.json(await devices.unlockWithPin(device_id, device_secret, pin));
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+// Everything registered below requires a signed-in user. Checked before the
+// body is parsed, so an anonymous caller can't make the server read 25 MB.
+app.use(requireUser);
+
+app.post("/api/auth/pin/set", smallJson, async (req, res) => {
+  try {
+    if (!req.user) return res.status(503).json({ error: "MPIN sign-in is not set up on this server.", code: "NOT_CONFIGURED" });
+    const { device_id, device_secret, pin } = req.body;
+    await devices.setPin(req.user.id, device_id, device_secret, pin);
+    res.json({ ok: true });
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.get("/api/auth/devices", async (req, res) => {
+  try {
+    res.json(await devices.listDevices());
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.post("/api/auth/devices/:id/revoke", async (req, res) => {
+  try {
+    await devices.revokeDevice(req.params.id, req.user && req.user.email);
+    res.json({ ok: true });
+  } catch (e) {
+    handleDeviceError(res, e);
+  }
+});
+
+app.use(express.json({ limit: "25mb" }));
 
 function getExtractionPrompt(scopeMode) {
   const isRenovation = scopeMode !== "new_work";
@@ -216,10 +339,6 @@ app.post("/extract-items", async (req, res) => {
     console.error("Extraction error:", err);
     res.status(500).json({ error: err.message || "Failed to extract items from image" });
   }
-});
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "studio5_doc_generator.html"));
 });
 
 const logoBuffer = fs.readFileSync(path.join(__dirname, "assets", "logo.png"));
@@ -613,14 +732,6 @@ app.get("/api/download-file", (req, res) => {
   }
 });
 
-app.get("/api/config-status", (req, res) => {
-  res.json({
-    gemini: !!process.env.GEMINI_API_KEY,
-    supabase: !!process.env.SUPABASE_URL
-  });
-});
-
-app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Studio5 doc generator API running on port ${PORT}`));

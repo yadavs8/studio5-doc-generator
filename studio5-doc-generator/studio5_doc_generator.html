@@ -12,6 +12,371 @@
 <link rel="apple-touch-icon" href="/assets/logo.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="/assets/brand_assets.js"></script>
+<script>
+// ===== SIGN-IN: email code once per device, then a 4-digit MPIN =====
+// The backend only answers signed-in users. A new phone/PC signs in once with
+// a code emailed to an account added in Supabase (same people as the Studio5
+// Project Tracker) and sets an MPIN; after that the MPIN alone unlocks it.
+// Every fetch() to the backend gets the session token attached; a 401 opens
+// the sign-in box and the request is retried once afterwards. Loaded in
+// <head> so it is in place before any other script calls the backend.
+(function () {
+  const DEVICE_KEY = 'studio5_device';    // localStorage: survives restarts
+  const SESSION_KEY = 'studio5_session';  // sessionStorage: gone when the tab closes
+  const PUBLIC_PATHS = ['/health', '/api/auth-config', '/api/config-status',
+    '/api/auth/otp/start', '/api/auth/otp/verify', '/api/auth/pin/unlock'];
+  const nativeFetch = window.fetch.bind(window);
+  let authConfig = null;
+  let signInPromise = null;
+
+  function readStore(store, key) {
+    try { return JSON.parse(store.getItem(key) || 'null'); } catch (e) { return null; }
+  }
+  function writeStore(store, key, value) {
+    try { value ? store.setItem(key, JSON.stringify(value)) : store.removeItem(key); } catch (e) {}
+  }
+  const readDevice = () => readStore(localStorage, DEVICE_KEY);
+  const writeDevice = (d) => writeStore(localStorage, DEVICE_KEY, d);
+  const readSession = () => readStore(sessionStorage, SESSION_KEY);
+  function writeSession(s) { writeStore(sessionStorage, SESSION_KEY, s); renderAuthChip(); }
+
+  function backendBase() {
+    const b = (typeof backendUrl !== 'undefined' && backendUrl) ? backendUrl : '';
+    return b || (window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000');
+  }
+  function isBackendRequest(url) {
+    let u;
+    try { u = new URL(url, window.location.href); } catch (e) { return false; }
+    const base = new URL(backendBase(), window.location.href);
+    if (u.origin !== base.origin && u.origin !== window.location.origin) return false;
+    return !PUBLIC_PATHS.includes(u.pathname);
+  }
+
+  async function getAuthConfig() {
+    if (authConfig) return authConfig;
+    try {
+      const res = await nativeFetch(backendBase() + '/api/auth-config');
+      authConfig = res.ok ? await res.json() : { enabled: false };
+    } catch (e) {
+      authConfig = { enabled: false };
+    }
+    return authConfig;
+  }
+
+  async function api(path, body, token) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const res = await nativeFetch(backendBase() + path, { method: 'POST', headers, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error || 'Something went wrong. Please try again.');
+      err.code = data.code;
+      throw err;
+    }
+    return data;
+  }
+
+  function validSession() {
+    const s = readSession();
+    return s && s.expires_at - 60 * 1000 > Date.now() ? s : null;
+  }
+
+  function deviceName() {
+    const ua = navigator.userAgent;
+    const os = /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iPhone/iPad'
+      : /Windows/i.test(ua) ? 'Windows' : /Mac OS/i.test(ua) ? 'Mac' : 'Device';
+    const br = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari'
+      : /Firefox\//.test(ua) ? 'Firefox' : 'Browser';
+    return br + ' on ' + os;
+  }
+
+  // ---------- the sign-in box ----------
+  function ensureModal() {
+    let el = document.getElementById('auth-signin-modal');
+    if (el) return el;
+    el = document.createElement('div');
+    el.className = 'modal-overlay';
+    el.id = 'auth-signin-modal';
+    el.innerHTML =
+      '<style>' +
+        '#auth-signin-modal .auth-pin { font-size:26px; letter-spacing:14px; text-align:center; padding:10px; }' +
+        '#auth-signin-modal .auth-link { background:none; border:none; color:var(--accent); font-size:12.5px; cursor:pointer; padding:0; text-decoration:underline; }' +
+        '#auth-signin-modal .auth-note { margin:0 0 4px; font-size:12.5px; color:var(--muted); line-height:1.45; }' +
+        '#auth-signin-modal .auth-error { color:#b0413e; font-size:12.5px; margin-top:10px; min-height:16px; }' +
+        '#auth-signin-modal .auth-ok { color:var(--good, #15803d); font-size:12.5px; margin-top:10px; min-height:16px; }' +
+      '</style>' +
+      '<div class="modal-box" style="max-width:380px;">' +
+        '<div class="modal-header"><h3 id="auth-title">Sign in to Studio5</h3></div>' +
+        '<form class="modal-body" id="auth-form" autocomplete="off"></form>' +
+      '</div>';
+    document.body.appendChild(el);
+    return el;
+  }
+
+  // Renders one screen. fields: [{id, label, type, attrs}]; onSubmit gets the
+  // form values and returns a session (done), a new screen, or throws.
+  function showScreen(screen, resolve) {
+    const modal = ensureModal();
+    const form = modal.querySelector('#auth-form');
+    modal.querySelector('#auth-title').textContent = screen.title;
+    form.innerHTML =
+      (screen.note ? '<p class="auth-note"></p>' : '') +
+      screen.fields.map(f =>
+        '<label for="' + f.id + '">' + f.label + '</label>' +
+        '<input id="' + f.id + '" ' + (f.attrs || '') + '>').join('') +
+      '<div class="' + (screen.ok ? 'auth-ok' : 'auth-error') + '" id="auth-msg"></div>' +
+      '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px;">' +
+        '<div>' + (screen.links || []).map((l, i) => '<button type="button" class="auth-link" data-link="' + i + '"></button>').join('<br>') + '</div>' +
+        '<div style="display:flex; gap:8px;">' +
+          (screen.cancel ? '<button type="button" class="btn secondary small" id="auth-cancel">Cancel</button>' : '') +
+          '<button type="submit" class="btn small" id="auth-submit"></button>' +
+        '</div>' +
+      '</div>';
+    if (screen.note) form.querySelector('.auth-note').textContent = screen.note;
+    form.querySelector('#auth-msg').textContent = screen.ok || screen.error || '';
+    form.querySelector('#auth-submit').textContent = screen.submit;
+    (screen.links || []).forEach((l, i) => {
+      const b = form.querySelector('[data-link="' + i + '"]');
+      b.textContent = l.text;
+      b.onclick = () => showScreen(l.go(), resolve);
+    });
+    if (screen.cancel) form.querySelector('#auth-cancel').onclick = () => finish(null);
+
+    function finish(session) {
+      modal.classList.remove('active');
+      form.onsubmit = null;
+      signInPromise = null;
+      resolve(session);
+    }
+
+    const inputs = screen.fields.map(f => form.querySelector('#' + f.id));
+    inputs.forEach((inp, i) => {
+      const f = screen.fields[i];
+      if (f.value) inp.value = f.value;
+      // MPIN boxes submit by themselves on the 4th digit
+      if (f.autoSubmit) inp.addEventListener('input', () => {
+        inp.value = inp.value.replace(/\D/g, '').slice(0, 4);
+        if (inp.value.length === 4 && inputs.every(x => x.value.length === 4)) form.requestSubmit();
+      });
+    });
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector('#auth-submit');
+      const msg = form.querySelector('#auth-msg');
+      btn.disabled = true;
+      msg.className = 'auth-error';
+      msg.textContent = '';
+      try {
+        const values = Object.fromEntries(screen.fields.map((f, i) => [f.id, inputs[i].value.trim()]));
+        const next = await screen.onSubmit(values);
+        if (next && next.access_token) { writeSession(next); finish(next); }
+        else if (next) showScreen(next, resolve);
+      } catch (err) {
+        if (err.screen) return showScreen(err.screen, resolve);
+        msg.textContent = err.message;
+        inputs.forEach(x => { if (x.type === 'password') x.value = ''; });
+        btn.disabled = false;
+        (inputs.find(x => x.type === 'password') || inputs[0]).focus();
+      }
+    };
+
+    modal.classList.add('active');
+    setTimeout(() => inputs[0] && inputs[0].focus(), 50);
+  }
+
+  const PIN_ATTRS = 'type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" class="auth-pin" required';
+
+  function emailScreen(opts) {
+    opts = opts || {};
+    return {
+      title: 'Sign in to Studio5',
+      note: opts.note || 'We will email you a one-time code. Use the email your Studio5 account was created with.',
+      error: opts.error,
+      fields: [{ id: 'auth-email', label: 'Email', attrs: 'type="email" autocomplete="username" required', value: opts.email || '' }],
+      submit: 'Send code',
+      cancel: true,
+      onSubmit: async ({ 'auth-email': email }) => {
+        await api('/api/auth/otp/start', { email });
+        return codeScreen(email, opts.replaceDeviceId);
+      }
+    };
+  }
+
+  function codeScreen(email, replaceDeviceId) {
+    return {
+      title: 'Enter the code',
+      note: 'If ' + email + ' has a Studio5 account, a code is on its way. It can take a minute — check spam too.',
+      fields: [{ id: 'auth-code', label: 'Code from the email', attrs: 'inputmode="numeric" pattern="[0-9 ]*" maxlength="12" autocomplete="one-time-code" required' }],
+      submit: 'Verify',
+      cancel: true,
+      links: [{ text: 'Use a different email', go: () => emailScreen({ email }) }],
+      onSubmit: async ({ 'auth-code': code }) => {
+        const r = await api('/api/auth/otp/verify', { email, code, device_name: deviceName(), replace_device_id: replaceDeviceId || null });
+        return setPinScreen(r);
+      }
+    };
+  }
+
+  function setPinScreen(verified) {
+    return {
+      title: 'Set your MPIN',
+      note: 'Choose a 4-digit MPIN for this device. Next time, just enter it to open the app.',
+      fields: [
+        { id: 'auth-pin1', label: 'New MPIN', attrs: PIN_ATTRS },
+        { id: 'auth-pin2', label: 'Enter it again', attrs: PIN_ATTRS, autoSubmit: true }
+      ],
+      submit: 'Save MPIN',
+      onSubmit: async ({ 'auth-pin1': p1, 'auth-pin2': p2 }) => {
+        if (p1 !== p2) throw new Error('The two MPINs do not match. Please try again.');
+        await api('/api/auth/pin/set', { device_id: verified.device_id, device_secret: verified.device_secret, pin: p1 }, verified.access_token);
+        // Only remembered once the MPIN is saved, so a half-finished setup
+        // never leaves a device that can't be unlocked.
+        writeDevice({ device_id: verified.device_id, device_secret: verified.device_secret, email: verified.email });
+        return { access_token: verified.access_token, expires_at: verified.expires_at, email: verified.email };
+      }
+    };
+  }
+
+  function pinScreen(device) {
+    const restart = (note) => {
+      writeDevice(null);
+      return emailScreen({ email: device.email, note, replaceDeviceId: device.device_id });
+    };
+    return {
+      title: 'Enter MPIN',
+      note: device.email,
+      fields: [{ id: 'auth-pin', label: '4-digit MPIN', attrs: PIN_ATTRS, autoSubmit: true }],
+      submit: 'Unlock',
+      cancel: true,
+      links: [
+        { text: 'Forgot MPIN?', go: () => restart('Sign in with an email code, then set a new MPIN.') },
+        { text: 'Use a different account', go: () => { writeDevice(null); return emailScreen(); } }
+      ],
+      onSubmit: async ({ 'auth-pin': pin }) => {
+        try {
+          return await api('/api/auth/pin/unlock', { device_id: device.device_id, device_secret: device.device_secret, pin });
+        } catch (err) {
+          if (['DEVICE_LOCKED', 'DEVICE_UNKNOWN', 'PIN_NOT_SET'].includes(err.code)) {
+            err.screen = restart(err.message);
+          }
+          throw err;
+        }
+      }
+    };
+  }
+
+  // One sign-in box for however many requests are waiting on it.
+  function promptSignIn() {
+    if (signInPromise) return signInPromise;
+    signInPromise = new Promise((resolve) => {
+      const device = readDevice();
+      showScreen(device ? pinScreen(device) : emailScreen(), resolve);
+    });
+    return signInPromise;
+  }
+
+  // ---------- attach the session to backend calls ----------
+  function withToken(init, token) {
+    const headers = new Headers((init && init.headers) || {});
+    headers.set('Authorization', 'Bearer ' + token);
+    return Object.assign({}, init, { headers });
+  }
+
+  async function isAuthRequired(res) {
+    if (res.status !== 401) return false;
+    try { return (await res.clone().json()).code === 'AUTH_REQUIRED'; } catch (e) { return false; }
+  }
+
+  window.fetch = async function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+    if (!isBackendRequest(url)) return nativeFetch(input, init);
+
+    const s = validSession();
+    const res = await nativeFetch(input, s ? withToken(init, s.access_token) : init);
+    if (!(await isAuthRequired(res))) return res;
+
+    const cfg = await getAuthConfig();
+    if (!cfg.enabled) return res;
+    writeSession(null);
+    const fresh = await promptSignIn();
+    if (!fresh) return res;
+    return nativeFetch(input, withToken(init, fresh.access_token));
+  };
+
+  // ---------- "Lock" and the device list ----------
+  window.lockStudio5 = function () {
+    writeSession(null);
+    window.location.reload();
+  };
+
+  window.showStudio5Devices = async function () {
+    const res = await window.fetch(backendBase() + '/api/auth/devices');
+    if (!res.ok) return;
+    const list = await res.json();
+    const mine = (readDevice() || {}).device_id;
+    let el = document.getElementById('auth-devices-modal');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'modal-overlay';
+      el.id = 'auth-devices-modal';
+      document.body.appendChild(el);
+    }
+    const fmt = (d) => d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+    el.innerHTML =
+      '<div class="modal-box" style="max-width:520px;">' +
+        '<div class="modal-header"><h3>Signed-in devices</h3><button class="modal-close" type="button">✕</button></div>' +
+        '<div class="modal-body">' +
+          '<p style="margin:0 0 8px; font-size:12.5px; color:var(--muted);">Remove a lost or old phone here — its MPIN stops working straight away.</p>' +
+          '<div style="overflow-x:auto;"><table><thead><tr><th>Who</th><th>Device</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table></div>' +
+        '</div>' +
+      '</div>';
+    const tbody = el.querySelector('tbody');
+    list.forEach(d => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td></td><td></td><td></td><td style="white-space:nowrap;"></td>';
+      tr.children[0].textContent = d.email;
+      tr.children[1].textContent = (d.device_name || 'Device') + (d.id === mine ? ' (this one)' : '') + (d.locked_at ? ' — locked' : '') + (d.pin_set ? '' : ' — setup not finished');
+      tr.children[2].textContent = fmt(d.last_used_at || d.created_at);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn secondary small';
+      btn.style.margin = '0';
+      btn.textContent = 'Remove';
+      btn.onclick = async () => {
+        if (!confirm('Remove ' + (d.device_name || 'this device') + ' for ' + d.email + '? It will need a new email code to sign in again.')) return;
+        const r = await window.fetch(backendBase() + '/api/auth/devices/' + d.id + '/revoke', { method: 'POST' });
+        if (!r.ok) return alert('Could not remove it. Please try again.');
+        if (d.id === mine) { writeDevice(null); return window.lockStudio5(); }
+        tr.remove();
+      };
+      tr.children[3].appendChild(btn);
+      tbody.appendChild(tr);
+    });
+    if (!list.length) tbody.innerHTML = '<tr><td colspan="4">No devices.</td></tr>';
+    el.querySelector('.modal-close').onclick = () => el.classList.remove('active');
+    el.classList.add('active');
+  };
+
+  function renderAuthChip() {
+    if (!document.body) return;
+    let chip = document.getElementById('auth-chip');
+    const s = readSession();
+    if (!s) { if (chip) chip.remove(); return; }
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.id = 'auth-chip';
+      chip.style.cssText = 'position:fixed; left:12px; bottom:12px; z-index:9000; background:#fff; border:1px solid var(--border); border-radius:999px; padding:4px 6px 4px 12px; font-size:12px; color:var(--muted); box-shadow:0 2px 8px rgba(0,0,0,0.08); display:flex; align-items:center; gap:6px; max-width:calc(100vw - 24px);';
+      document.body.appendChild(chip);
+    }
+    chip.innerHTML = '<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
+      '<button type="button" class="btn secondary small" style="margin:0; border-radius:999px;" onclick="showStudio5Devices()">Devices</button>' +
+      '<button type="button" class="btn secondary small" style="margin:0; border-radius:999px;" onclick="lockStudio5()">Lock</button>';
+    chip.firstChild.textContent = s.email || 'Signed in';
+  }
+  document.addEventListener('DOMContentLoaded', renderAuthChip);
+})();
+</script>
 <style>
   :root {
     --bg: #f7f5f2;
