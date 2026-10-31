@@ -32,6 +32,11 @@ alter table generated_documents
     add column if not exists finalized_at   timestamptz,
     add column if not exists superseded_at  timestamptz;
 
+-- The PI's subject ("Tile Work on Lily Pond") is the line the account
+-- statement shows for it. The po-tracker's migration_010 adds the same
+-- column; whichever runs first creates it.
+alter table proforma_invoice add column if not exists subject text;
+
 -- ---------------------------------------------------------------------------
 -- 2. UNIQUENESS
 -- Old rule: one row per (doc_type, doc_number). New rules:
@@ -104,10 +109,14 @@ end $$;
 --   * old revision -> superseded, this one -> issued.
 -- If anything fails, nothing changes and the ledger row stays pending.
 -- ---------------------------------------------------------------------------
+-- An earlier draft of this migration had no p_subject; drop it so no
+-- overload is left behind if that draft was ever run.
+drop function if exists fn_finalize_pi(uuid, uuid, uuid, uuid, date, numeric, text, text, uuid);
+
 create or replace function fn_finalize_pi(
     p_ledger_id uuid, p_site_id uuid, p_po_id uuid, p_sub_project_id uuid,
     p_pi_date date, p_amount numeric, p_remarks text,
-    p_storage_path text, p_user_id uuid default null
+    p_storage_path text, p_user_id uuid default null, p_subject text default null
 ) returns uuid
 language plpgsql
 set search_path = public
@@ -156,9 +165,9 @@ begin
 
     if v_pi_id is null then
         insert into proforma_invoice (site_id, sub_project_id, po_id, pi_number, pi_date,
-                                      amount, submitted_date, remarks, status, document_id)
+                                      amount, submitted_date, remarks, subject, status, document_id)
         values (p_site_id, p_sub_project_id, p_po_id, v_row.doc_number, p_pi_date,
-                p_amount, p_pi_date, nullif(btrim(p_remarks), ''), 'sent', v_doc_id)
+                p_amount, p_pi_date, nullif(btrim(p_remarks), ''), nullif(btrim(p_subject), ''), 'sent', v_doc_id)
         returning pi_id into v_pi_id;
     else
         select * into v_pi from proforma_invoice where pi_id = v_pi_id for update;
@@ -174,6 +183,7 @@ begin
                pi_date        = p_pi_date,
                amount         = p_amount,
                remarks        = coalesce(nullif(btrim(p_remarks), ''), remarks),
+               subject        = coalesce(nullif(btrim(p_subject), ''), subject),
                status         = 'sent',
                document_id    = v_doc_id,
                updated_at     = now()
@@ -228,10 +238,10 @@ end $$;
 revoke execute on function fn_allocate_document_number(text, text)     from public, anon, authenticated;
 revoke execute on function fn_bump_document_sequence(text, text, int)  from public, anon, authenticated;
 revoke execute on function fn_begin_revision(text, text, jsonb, numeric, text, text, uuid)                  from public, anon, authenticated;
-revoke execute on function fn_finalize_pi(uuid, uuid, uuid, uuid, date, numeric, text, text, uuid)           from public, anon, authenticated;
+revoke execute on function fn_finalize_pi(uuid, uuid, uuid, uuid, date, numeric, text, text, uuid, text)     from public, anon, authenticated;
 revoke execute on function fn_abandon_pending(uuid, text)                                                     from public, anon, authenticated;
 grant  execute on function fn_allocate_document_number(text, text)     to service_role;
 grant  execute on function fn_bump_document_sequence(text, text, int)  to service_role;
 grant  execute on function fn_begin_revision(text, text, jsonb, numeric, text, text, uuid)                  to service_role;
-grant  execute on function fn_finalize_pi(uuid, uuid, uuid, uuid, date, numeric, text, text, uuid)           to service_role;
+grant  execute on function fn_finalize_pi(uuid, uuid, uuid, uuid, date, numeric, text, text, uuid, text)     to service_role;
 grant  execute on function fn_abandon_pending(uuid, text)                                                     to service_role;

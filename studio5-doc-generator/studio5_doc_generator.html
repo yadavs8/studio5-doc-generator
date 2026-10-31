@@ -3802,7 +3802,8 @@ async function loadPIReviseOptions() {
       onSite.pis.forEach(p => {
         const o = document.createElement('option');
         o.value = 'site:' + p.pi_id;
-        o.textContent = p.pi_number + (p.revision > 1 ? ' (r' + p.revision + ')' : '') + ' · ' + String(p.pi_date || '').slice(0, 10) + fmtAmt(p.amount) +
+        o.textContent = p.pi_number + (p.revision > 1 ? ' (r' + p.revision + ')' : '') + ' · ' + String(p.pi_date || '').slice(0, 10) +
+          (p.subject ? ' · ' + p.subject : '') + fmtAmt(p.amount) +
           (p.work_status ? ' · ' + p.work_status : '') + (p.can_revise ? '' : ' — ' + p.why_not);
         o.disabled = !p.can_revise;
         g.appendChild(o);

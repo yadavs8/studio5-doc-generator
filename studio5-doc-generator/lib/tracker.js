@@ -80,7 +80,7 @@ async function listPisForSite(siteId) {
   if (!supabase) throw notConfigured();
   const [trackerPis, ledger, pending] = await Promise.all([
     rows(supabase.from("proforma_invoice")
-      .select("pi_id, pi_number, pi_date, amount, remarks, status, po_id, sub_project_id, document_id")
+      .select("pi_id, pi_number, pi_date, amount, subject, remarks, status, po_id, sub_project_id, document_id")
       .eq("site_id", siteId)),
     rows(supabase.from("generated_documents")
       .select("id, doc_number, revision, pi_id, total_amount, created_at, finalized_at")
@@ -103,6 +103,7 @@ async function listPisForSite(siteId) {
         pi_number: pi.pi_number,
         pi_date: pi.pi_date,
         amount: pi.amount,
+        subject: pi.subject,
         work_status: pi.remarks,
         status: pi.status,
         po_id: pi.po_id,

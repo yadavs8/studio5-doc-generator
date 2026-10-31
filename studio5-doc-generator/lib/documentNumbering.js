@@ -238,7 +238,7 @@ async function beginRevision(docType, docNumber, params) {
 }
 
 async function finalizePi(params) {
-  const { ledgerId, siteId, poId, subProjectId, piDate, amount, remarks, storagePath, userId } = params;
+  const { ledgerId, siteId, poId, subProjectId, piDate, amount, remarks, subject, storagePath, userId } = params;
   const { data, error } = await supabase.rpc("fn_finalize_pi", {
     p_ledger_id: ledgerId,
     p_site_id: siteId,
@@ -249,6 +249,7 @@ async function finalizePi(params) {
     p_remarks: remarks || null,
     p_storage_path: storagePath,
     p_user_id: userId || null,
+    p_subject: subject || null,
   });
   if (error) {
     const err = new Error(error.message);

@@ -504,6 +504,8 @@ function piTrackerFields(src) {
     piDate: src.pi_date,
     amount,
     remarks: src.work_status || null,
+    // The statement line for this PI, e.g. "Tile Work on Lily Pond".
+    subject: String(src.subject || "").replace(/\s+/g, " ").trim().slice(0, 300) || null,
   };
 }
 
