@@ -9,6 +9,7 @@ const generatePI = require("./generators/generate_pi.js");
 const generateInvoice = require("./generators/generate_invoice.js");
 const generateChallan = require("./generators/generate_challan.js");
 const documentNumbering = require("./lib/documentNumbering.js");
+const storage = require("./lib/storage.js");
 const { requireUser, publicAuthConfig } = require("./lib/auth.js");
 const devices = require("./lib/devices.js");
 
@@ -34,7 +35,7 @@ app.use((req, res, next) => {
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-gemini-key, x-record-only");
-    res.setHeader("Access-Control-Expose-Headers", "X-Document-Number, Content-Disposition");
+    res.setHeader("Access-Control-Expose-Headers", "X-Document-Number, X-Ledger-Id, X-Revision, X-Pi-Id, Content-Disposition");
   }
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
@@ -465,11 +466,82 @@ function safeFilenamePart(docNumber) {
 }
 
 function handleLedgerError(res, e) {
-  if (e.code === "DUPLICATE_NUMBER") {
-    return res.status(409).json({ error: e.message });
+  if (["DUPLICATE_NUMBER", "NUMBER_FAR_AHEAD", "REVISION_IN_PROGRESS"].includes(e.code)) {
+    return res.status(409).json({ error: e.message, code: e.code });
   }
+  if (e.code === "BAD_INPUT") return res.status(400).json({ error: e.message, code: e.code });
+  if (e.code === "NOT_FOUND") return res.status(404).json({ error: e.message, code: e.code });
+  if (e.code === "NOT_CONFIGURED") return res.status(503).json({ error: e.message, code: e.code });
   console.error(e);
   return res.status(500).json({ error: e.message });
+}
+
+// ----- Proforma Invoice: draft / final / revise, linked to the po-tracker -----
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const storageDocxType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function badInput(message) {
+  const err = new Error(message);
+  err.code = "BAD_INPUT";
+  return err;
+}
+
+// What the tracker's proforma_invoice row needs, checked before a number is
+// spent so a missing site can't leave a pending entry behind.
+function piTrackerFields(src) {
+  const siteId = src.site_id;
+  if (!siteId || !UUID_RE.test(siteId)) throw badInput("Pick the client site this PI is for.");
+  if (src.po_id && !UUID_RE.test(src.po_id)) throw badInput("The selected PO / work order is not valid.");
+  if (src.sub_project_id && !UUID_RE.test(src.sub_project_id)) throw badInput("The selected sub-project is not valid.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(src.pi_date || ""))) throw badInput("Enter the P.I. date.");
+  const amount = Number(src.grand_total);
+  if (!(amount > 0)) throw badInput("The PI total must be more than zero.");
+  return {
+    siteId,
+    poId: src.po_id || null,
+    subProjectId: src.sub_project_id || null,
+    piDate: src.pi_date,
+    amount,
+    remarks: src.work_status || null,
+  };
+}
+
+// Upload, then record in one database transaction. If recording fails the
+// upload is removed again and the ledger row stays pending.
+async function storeAndFinalizePi(ledger, buffer, ext, fields, userId) {
+  const storagePath = storage.pathFor("pi", fields.siteId, ledger.docNumber, ledger.revision, ext);
+  await storage.upload(storagePath, buffer, ext);
+  try {
+    const piId = await documentNumbering.finalizePi({ ledgerId: ledger.ledgerId, storagePath, userId, ...fields });
+    return { piId, storagePath };
+  } catch (e) {
+    await storage.remove(storagePath);
+    throw e;
+  }
+}
+
+// After a number is reserved, a failure must say so: the entry is pending and
+// can be retried or discarded from the Library.
+function sendPendingError(res, e, ledger) {
+  console.error(`[pi] ${ledger.docNumber} r${ledger.revision} left pending:`, e.message);
+  res.status(502).json({
+    error: `PI ${ledger.docNumber} could not be saved: ${e.message} It is kept as pending — retry or discard it from the Library.`,
+    code: "SAVED_AS_PENDING",
+    ledger_id: ledger.ledgerId,
+    doc_number: ledger.docNumber,
+    revision: ledger.revision,
+  });
+}
+
+function sendFinalPi(res, buf, payload, ledger, result) {
+  const label = ledger.revision > 1 ? `${ledger.docNumber} r${ledger.revision}` : ledger.docNumber;
+  const filename = buildDescriptiveDocFilename("pi", payload, label, "docx");
+  // Optional copy on this PC; on Render the disk is wiped on every restart.
+  if (process.env.STUDIO5_DOCS_DIR) autoSaveDocBuffer("pi", payload.pi_date, filename, buf);
+  res.setHeader("X-Ledger-Id", ledger.ledgerId);
+  res.setHeader("X-Revision", String(ledger.revision));
+  res.setHeader("X-Pi-Id", result.piId);
+  sendDocx(res, buf, filename, ledger.docNumber);
 }
 
 // GET /next-number/:docType?address=<key> — read-only preview of what the
@@ -544,9 +616,19 @@ app.post("/generate/purchase-order", async (req, res) => {
   }
 });
 
+// mode (in the body):
+//   "draft"  — a DRAFT-numbered file to download; no number spent, nothing saved.
+//   "final"  — new number, saved to storage, PI created in the po-tracker.
+//   "revise" — revise_of: "<number>"; same number, next revision, the
+//              tracker's PI updated, earlier revisions kept.
+//   (none)   — the original behaviour, until the page sends a mode.
+// With ?format=json (browser-made PDF), final/revise only reserve the number;
+// the PDF then goes to POST /api/documents/:ledgerId/file.
 app.post("/generate/proforma-invoice", async (req, res) => {
+  const payload = req.body;
+  const mode = payload.mode;
+  if (mode) return generatePiWithMode(req, res, payload, mode);
   try {
-    const payload = req.body;
     const { docNumber } = await documentNumbering.allocateAndRecord("pi", {
       docNumber: payload.pi_no,
       issuingAddressKey: payload.issuing_address_key,
@@ -566,6 +648,80 @@ app.post("/generate/proforma-invoice", async (req, res) => {
     handleLedgerError(res, e);
   }
 });
+
+async function generatePiWithMode(req, res, payload, mode) {
+  let ledger = null;
+  try {
+    if (!["draft", "final", "revise"].includes(mode)) throw badInput(`Unknown mode "${mode}".`);
+
+    if (mode === "draft") {
+      payload.pi_no = "DRAFT";
+      const buf = await generatePI(payload, logoBuffer, stampBuffer);
+      return sendDocx(res, buf, buildDescriptiveDocFilename("pi", payload, "DRAFT", "docx"), null);
+    }
+
+    if (!require("./lib/supabase")) {
+      const err = new Error("Final and revised PIs need Supabase, which is not configured on this server. Use Draft.");
+      err.code = "NOT_CONFIGURED";
+      throw err;
+    }
+    const fields = piTrackerFields(payload);
+    const userId = req.user ? req.user.id : null;
+    const common = {
+      payload,
+      totalAmount: fields.amount,
+      counterpartyName: payload.buyer && payload.buyer.name,
+      issuingAddressKey: payload.issuing_address_key,
+      createdBy: userId,
+      siteId: fields.siteId,
+      poId: fields.poId,
+    };
+
+    if (mode === "final") {
+      ledger = await documentNumbering.allocateAndRecord("pi", {
+        ...common,
+        docNumber: payload.pi_no,
+        status: "pending",
+        confirmFarAhead: payload.confirm_far_ahead === true,
+      });
+    } else {
+      if (!payload.revise_of) throw badInput("Pick the PI to revise.");
+      ledger = await documentNumbering.beginRevision("pi", payload.revise_of, common);
+    }
+    payload.pi_no = ledger.docNumber;
+
+    if (req.query.format === "json" || req.headers["x-record-only"] === "true") {
+      return res.json({ success: true, docNumber: ledger.docNumber, ledger_id: ledger.ledgerId, revision: ledger.revision, payload });
+    }
+
+    let buf, result;
+    try {
+      buf = await generatePI(payload, logoBuffer, stampBuffer);
+      result = await storeAndFinalizePi(ledger, buf, "docx", fields, userId);
+    } catch (e) {
+      return sendPendingError(res, e, ledger);
+    }
+    sendFinalPi(res, buf, payload, ledger, result);
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+}
+
+// A pending PI's ledger row holds everything needed to finish it.
+async function loadPendingPi(ledgerId) {
+  if (!UUID_RE.test(String(ledgerId))) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+  const row = await documentNumbering.getLedgerRow(ledgerId);
+  if (!row || row.doc_type !== "pi") throw Object.assign(new Error("No such PI."), { code: "NOT_FOUND" });
+  if (row.status !== "pending") throw badInput(`PI ${row.doc_number} (revision ${row.revision}) is already ${row.status}.`);
+  const payload = { ...row.payload, pi_no: row.doc_number };
+  const fields = piTrackerFields({
+    ...payload,
+    site_id: row.site_id,
+    po_id: row.po_id,
+    grand_total: row.total_amount,
+  });
+  return { row, payload, fields, ledger: { ledgerId: row.id, docNumber: row.doc_number, revision: row.revision } };
+}
 
 app.post("/generate/invoice", async (req, res) => {
   try {
@@ -617,6 +773,71 @@ app.post("/generate/challan", async (req, res) => {
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }
+});
+
+// POST /api/documents/:ledgerId/file (multipart "file") — finishes a pending
+// PI with a file made in the browser (the PDF route), the same way the server
+// finishes a .docx: upload, then record in the po-tracker.
+app.post("/api/documents/:ledgerId/file", memoryUpload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) throw badInput("No file was sent.");
+    const ext = req.file.mimetype === "application/pdf" ? "pdf"
+      : req.file.mimetype === storageDocxType ? "docx" : null;
+    if (!ext) throw badInput("Only PDF or Word (.docx) files can be saved.");
+    const { fields, ledger } = await loadPendingPi(req.params.ledgerId);
+    let result;
+    try {
+      result = await storeAndFinalizePi(ledger, req.file.buffer, ext, fields, req.user ? req.user.id : null);
+    } catch (e) {
+      return sendPendingError(res, e, ledger);
+    }
+    res.json({ success: true, doc_number: ledger.docNumber, revision: ledger.revision, pi_id: result.piId, storage_path: result.storagePath });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// POST /api/documents/:ledgerId/retry — rebuilds a pending PI's .docx from
+// its saved details and finishes it.
+app.post("/api/documents/:ledgerId/retry", async (req, res) => {
+  try {
+    const { payload, fields, ledger } = await loadPendingPi(req.params.ledgerId);
+    let buf, result;
+    try {
+      buf = await generatePI(payload, logoBuffer, stampBuffer);
+      result = await storeAndFinalizePi(ledger, buf, "docx", fields, req.user ? req.user.id : null);
+    } catch (e) {
+      return sendPendingError(res, e, ledger);
+    }
+    sendFinalPi(res, buf, payload, ledger, result);
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// POST /api/documents/:ledgerId/abandon { reason } — gives up on a pending
+// entry. A new number is voided with the reason on record; a pending
+// revision is voided and the live revision stays as it was.
+app.post("/api/documents/:ledgerId/abandon", express.json(), async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.ledgerId)) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+    await documentNumbering.abandonPending(req.params.ledgerId, req.body && req.body.reason);
+    res.json({ success: true });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
+});
+
+// GET /api/documents/:ledgerId/download — a 5-minute link to the saved file.
+app.get("/api/documents/:ledgerId/download", async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.ledgerId)) throw Object.assign(new Error("No such document."), { code: "NOT_FOUND" });
+    const row = await documentNumbering.getLedgerRow(req.params.ledgerId);
+    if (!row || !row.storage_path) throw Object.assign(new Error("No saved file for this document."), { code: "NOT_FOUND" });
+    res.json({ url: await storage.signedUrl(row.storage_path), doc_number: row.doc_number, revision: row.revision });
+  } catch (e) {
+    handleLedgerError(res, e);
+  }
 });
 
 // POST /api/save-generated-doc — receives generated PDF (or other files) from client

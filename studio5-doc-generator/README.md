@@ -71,6 +71,34 @@ number fields instead of using the autofilled one. The server checks it isn't a
 duplicate and, if it isn't, advances the counter past it so future autofilled
 numbers never collide with it.
 
+## Proforma Invoices: draft, final, revise
+
+`POST /generate/proforma-invoice` takes a `mode` in the body:
+
+| mode | What happens |
+|---|---|
+| `draft` | A `DRAFT`-numbered .docx to download. No number used, nothing saved. |
+| `final` | Needs `site_id` (and optionally `po_id`, `work_status`). Takes the next number, saves the file to the po-tracker's `studio5-documents` storage, and creates the PI in the tracker — so it shows on that site's statement. |
+| `revise` | Needs `revise_of: "<PI number>"` and `site_id`. Same number, next revision (`_r2`, `_r3`…). The tracker's PI is updated to the new amount and file; earlier revisions stay downloadable. A PI already converted to a tax invoice can't be revised. |
+| *(none)* | The original behaviour, kept until the page sends a mode. |
+
+A typed number more than 5 ahead of the next one is refused unless the body
+says `confirm_far_ahead: true` — a slip like 1102 for 112 would otherwise push
+every later number past 1102.
+
+**If saving fails** after a number is taken (storage down, tracker refuses),
+the answer is `502` with `code: "SAVED_AS_PENDING"` and a `ledger_id`. The
+entry stays **pending** — never falsely "issued" — and can be finished or
+dropped:
+- `POST /api/documents/:ledgerId/retry` — rebuild the .docx and save it
+- `POST /api/documents/:ledgerId/abandon` `{ reason }` — void it (a pending revision leaves the live one untouched)
+
+**PDF made in the browser:** call generate with `?format=json` (reserves the
+number as pending), then send the PDF to `POST /api/documents/:ledgerId/file`
+(multipart, field `file`).
+
+`GET /api/documents/:ledgerId/download` returns a 5-minute link to any saved revision.
+
 ## Sign-in
 
 Everything except the page itself, `/assets`, `/manifest.json`, `/health`,
