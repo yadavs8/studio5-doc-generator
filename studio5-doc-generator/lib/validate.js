@@ -1,7 +1,7 @@
 // Checks a document request before anything is numbered or recorded, and replaces every figure with
 // the server's own (lib/money.js). Throws { code: "INVALID_PAYLOAD" } with a plain message.
 const { computeTotals } = require("./money.js");
-const { isStudio5Gstin, findBank } = require("./company.js");
+const { isStudio5Gstin, findBank, gstinState, stateName } = require("./company.js");
 
 const bad = (message) => Object.assign(new Error(message), { code: "INVALID_PAYLOAD" });
 const isRealDate = (d) => {
@@ -39,7 +39,7 @@ function validateAndPrice(docType, input) {
   }
 
   if (!Array.isArray(p.sections) || p.sections.length === 0) throw bad(`Add at least one section with items to the ${LABEL[docType]}.`);
-  if (p.sections.length > 100 || p.sections.some((s) => !Array.isArray(s.items) || s.items.length > 500)) throw bad("Too many sections or items.");
+  if (p.sections.length > 100 || p.sections.some((s) => !s || typeof s !== "object" || !Array.isArray(s.items) || s.items.length > 500 || s.items.some((it) => !it || typeof it !== "object"))) throw bad("The sections or items are not in the expected form, or there are too many.");
   for (const s of p.sections) for (const it of s.items) {
     if (it.particulars != null && !text(it.particulars, 2000)) throw bad("An item description is too long.");
     for (const k of ["qty", "rate", "rooms"]) {
@@ -49,6 +49,13 @@ function validateAndPrice(docType, input) {
   }
   const gstPct = Number(p.gst_pct || 0);
   if (!Number.isFinite(gstPct) || gstPct < 0 || gstPct > 28) throw bad("GST % must be between 0 and 28.");
+
+  // A typed GSTIN must be a real one, and a typed place of supply a real state code — a typo must not
+  // silently turn an inter-state sale into CGST + SGST.
+  const partyGstin = String(((docType === "po" ? p.vendor : p.buyer) || {}).gstin || "").trim();
+  if (partyGstin && !gstinState(partyGstin)) throw bad(`"${partyGstin.slice(0, 20)}" is not a valid GSTIN (15 characters, starting with a state code).`);
+  const pos = String(p.place_of_supply || "").trim();
+  if (pos && !stateName(pos)) throw bad(`"${pos.slice(0, 5)}" is not a GST state code (e.g. 06 Haryana, 07 Delhi).`);
 
   const party = docType === "po" ? p.vendor : p.buyer;
   if (!party || !text(party.name, 300) || !party.name.trim()) throw bad(docType === "po" ? "Fill in the vendor's name." : "Fill in the buyer's name.");

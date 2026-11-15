@@ -30,7 +30,7 @@ function fyFromDate(ymd) {
 }
 
 function seriesFor(addressKey) {
-  return ADDRESS_SERIES_CODE[addressKey] || "1";
+  return Object.prototype.hasOwnProperty.call(ADDRESS_SERIES_CODE, addressKey) ? ADDRESS_SERIES_CODE[addressKey] : "1";
 }
 
 function formatNumber(docType, seq, { fy, series } = {}) {
@@ -141,7 +141,7 @@ function createNumbering(supabase, { local = null } = {}) {
 
   async function issue(docType, { docNumber, addressKey, date, payload, counterpartyName, totalAmount, build } = {}) {
     assertValidDocType(docType);
-    const typed = docNumber && String(docNumber).trim();
+    const typed = docNumber && String(docNumber).trim().toUpperCase();
     let parsed = null;
     if (typed) {
       parsed = parseTypedNumber(docType, typed);
@@ -241,8 +241,21 @@ function createNumbering(supabase, { local = null } = {}) {
     return value;
   }
 
-  /** Uploads what was done offline. Safe to call any time; stops quietly while still offline. */
-  async function sync() {
+  /** Uploads what was done offline. Safe to call any time; one run at a time; stops quietly while offline. */
+  let running = null;
+  function sync() {
+    if (!running) running = syncOnce().finally(() => { running = null; });
+    return running;
+  }
+
+  async function bump(row) {
+    const parsed = parseTypedNumber(row.doc_type, row.doc_number);
+    if (!parsed) return;
+    const c = { fy: parsed.fy || fyFromDate(), series: parsed.series || seriesFor(row.issuing_address_key) };
+    check(await supabase.rpc("fn_bump_document_sequence", { p_doc_type: row.doc_type, p_scope_key: scopeKey(row.doc_type, c), p_at_least: parsed.seq + 1 }));
+  }
+
+  async function syncOnce() {
     if (!local) return { uploaded: 0, conflicts: 0, pending: 0 };
     if (!supabase) return { uploaded: 0, conflicts: 0, pending: local.pendingCount() };
     let uploaded = 0, conflicts = 0;
@@ -253,26 +266,35 @@ function createNumbering(supabase, { local = null } = {}) {
             await recordRemote(item.row);
           } catch (e) {
             if (e.code !== "DUPLICATE_NUMBER") throw e;
-            local.shift({ conflict: { doc_type: item.row.doc_type, doc_number: item.row.doc_number, message: `Number ${item.row.doc_number} was already used elsewhere while this PC was offline. Issue this document again with a new number and void the old copy.` } });
-            conflicts++;
-            continue;
+            // Already there: is it this very document (uploaded before, answer lost) or someone else's?
+            const existing = check(await supabase.from("generated_documents").select("payload")
+              .eq("doc_type", item.row.doc_type).eq("doc_number", item.row.doc_number).maybeSingle());
+            const ref = item.row.payload && item.row.payload.offline_ref;
+            const same = !!ref && !!existing && existing.payload && existing.payload.offline_ref === ref;
+            if (!same) {
+              local.done(item, { conflict: { doc_type: item.row.doc_type, doc_number: item.row.doc_number, message: `Number ${item.row.doc_number} was already used elsewhere while this PC was offline. Issue this document again with a new number and void the old copy.` } });
+              conflicts++;
+              continue;
+            }
           }
-          const parsed = parseTypedNumber(item.row.doc_type, item.row.doc_number);
-          if (parsed) {
-            const c = { fy: parsed.fy || fyFromDate(), series: parsed.series || seriesFor(item.row.issuing_address_key) };
-            check(await supabase.rpc("fn_bump_document_sequence", { p_doc_type: item.row.doc_type, p_scope_key: scopeKey(item.row.doc_type, c), p_at_least: parsed.seq + 1 }));
-          }
+          // The row is in the cloud now; if moving the counter fails, retry only that.
+          local.replace(item, { op: "bump", row: item.row });
+          await bump(item.row);
+        } else if (item.op === "bump") {
+          await bump(item.row);
         } else if (item.op === "void") {
           check(await supabase.from("generated_documents")
             .update({ status: "void", void_reason: item.reason, voided_at: item.voided_at })
             .eq("doc_type", item.doc_type).eq("doc_number", item.doc_number).eq("status", "issued").select().maybeSingle());
         }
-        local.shift();
-        uploaded++;
+        local.done(item);
+        uploaded += item.op === "bump" ? 0 : 1;
       } catch (e) {
         if (isNetworkError(e)) break; // still offline — try again later
-        console.error("[sync] could not upload", item, e.message || e);
-        break;
+        // Refused for good (e.g. a database rule): set it aside so it cannot block everything behind it.
+        console.error("[sync] could not upload", item.op, item.row ? item.row.doc_number : item.doc_number, e.message || e);
+        local.done(item, { conflict: { doc_type: (item.row || item).doc_type, doc_number: (item.row || item).doc_number, message: `${(item.row || item).doc_number} could not be uploaded: ${String(e.message || e).slice(0, 200)}` } });
+        conflicts++;
       }
     }
     return { uploaded, conflicts, pending: local.pendingCount() };

@@ -411,7 +411,7 @@
       <select id="pi-address" onchange="autofillNumber('pi-no','pi',this.value)"></select>
       <div class="row2">
         <div><label>P.I. No.</label><input id="pi-no" placeholder="26-27/1101" oninput="this.dataset.autofilled=''"></div>
-        <div><label>P.I. Date</label><input id="pi-date" type="date"></div>
+        <div><label>P.I. Date</label><input id="pi-date" type="date" onchange="autofillNumber('pi-no','pi',document.getElementById('pi-address').value)"></div>
       </div>
       <label>Bank Account to show</label>
       <select id="pi-bank">
@@ -2642,8 +2642,16 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (!res.ok) {
+        // The server refused (e.g. totals do not match, number already used): say why, make no PDF.
+        const err = await res.json().catch(() => ({}));
+        statusEl.textContent = 'Error: ' + (err.error || res.statusText);
+        return { ok: false };
+      }
       if (res.ok) {
         const data = await res.json();
+        // Print the server's figures (rounding, GST split, words), the same as the Word file.
+        if (data.payload) Object.assign(payload, data.payload);
         if (data.docNumber) {
           allocatedDocNo = data.docNumber;
           if (docType === 'po') payload.po_no = allocatedDocNo;
@@ -3386,7 +3394,8 @@ function recalcINV() {
   const issuerState = ((addresses[document.getElementById('inv-address').value] || {}).gstin || '').slice(0, 2);
   const typedPos = (document.getElementById('inv-place-of-supply').value || '').trim();
   const buyerGstin = (document.getElementById('inv-buyer-gstin').value || '').trim();
-  const pos = /^\d{2}$/.test(typedPos) ? typedPos : (/^\d{2}/.test(buyerGstin) ? buyerGstin.slice(0, 2) : issuerState);
+  // Same rule as the server: only a complete, well-formed GSTIN decides the state.
+  const pos = /^\d{2}$/.test(typedPos) ? typedPos : (/^\d{2}[A-Za-z0-9]{13}$/.test(buyerGstin) ? buyerGstin.slice(0, 2) : issuerState);
   document.getElementById('inv-gst-split').textContent = pos && pos === issuerState
     ? 'CGST ' + (Math.floor(gstAmt * 50) / 100).toFixed(2) + ' + SGST ' + (gstAmt - Math.floor(gstAmt * 50) / 100).toFixed(2)
     : 'IGST ' + gstAmt.toFixed(2) + (pos ? ' (place of supply ' + pos + ')' : '');

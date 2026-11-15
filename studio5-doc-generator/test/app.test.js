@@ -134,3 +134,33 @@ test("DNS rebinding: requests for an unexpected host name are refused", async ()
   assert.equal(await status("evil.example:3000"), 421);
   assert.notEqual(await status(`localhost:${new URL(base).port}`), 421);
 });
+
+test("a mistyped buyer GSTIN or unknown state code is refused, not silently treated as same-state", async () => {
+  await stop();
+  await start();
+  assert.equal((await post("/generate/invoice", invoice({ buyer: { name: "B", address: "a", gstin: "07AAACL12" } }))).status, 400);
+  assert.equal((await post("/generate/invoice", invoice({ place_of_supply: "99" }))).status, 400);
+});
+
+test("same-origin works behind a proxy that changes the scheme (host compared, not http vs https)", async () => {
+  const r = await post("/void-document", { doc_type: "po", doc_number: "PO/77" }, { origin: base.replace("http://", "https://") });
+  assert.notEqual(r.status, 403);
+});
+
+test("locked mode hides the page assets (the stamp) and limits wrong codes", async () => {
+  await stop();
+  await start({ ACCESS_CODE: "s3cret-code" });
+  assert.equal((await fetch(base + "/assets/stamp.png")).status, 401);
+  assert.match(await (await fetch(base + "/")).text(), /Access code/);
+  for (let i = 0; i < 5; i++) await post("/api/unlock", { code: "nope" });
+  assert.equal((await post("/api/unlock", { code: "s3cret-code" })).status, 429);
+  await stop();
+  await start();
+});
+
+test("bad JSON gets a plain message, never a stack trace", async () => {
+  const r = await fetch(base + "/void-document", { method: "POST", headers: { "content-type": "application/json" }, body: "{oops" });
+  assert.equal(r.status, 400);
+  const t = await r.text();
+  assert.doesNotMatch(t, /at |node_modules|\/home\//);
+});

@@ -69,3 +69,55 @@ test("never online and no Supabase settings: the local ledger numbers documents 
   assert.equal((await n.issue("pi", { date: "2026-09-01", payload: {} })).docNumber, "26-27/1");
   assert.equal((await n.issue("pi", { date: "2026-09-01", payload: {} })).docNumber, "26-27/2");
 });
+
+test("two uploads running at once cannot drop or duplicate queued documents", async () => {
+  const sb = fakeSupabase();
+  const local = createLocalLedger(ledgerFile());
+  const n = createNumbering(sb, { local });
+  sb.state.offline = true;
+  for (let i = 0; i < 3; i++) await n.issue("po", { payload: {} });
+  sb.state.offline = false;
+  await Promise.all([n.sync(), n.sync(), n.sync()]);
+  assert.deepEqual(sb.db.generated_documents.map((d) => d.doc_number).sort(), ["PO/1", "PO/2", "PO/3"]);
+  assert.equal(local.pendingCount(), 0);
+  assert.equal(local.status().conflicts.length, 0);
+});
+
+test("uploaded but the counter update failed: no false conflict, the counter is retried", async () => {
+  const sb = fakeSupabase();
+  const local = createLocalLedger(ledgerFile());
+  const n = createNumbering(sb, { local });
+  sb.state.offline = true;
+  await n.issue("po", { payload: {} });                 // PO/1 offline
+  sb.state.offline = false;
+  const rpc = sb.rpc;
+  let fail = true;
+  sb.rpc = async (name, args) => (name === "fn_bump_document_sequence" && fail ? { data: null, error: { message: "TypeError: fetch failed" } } : rpc(name, args));
+  await n.sync();                                        // insert ok, bump fails (network)
+  fail = false;
+  const r = await n.sync();
+  assert.equal(r.conflicts, 0);
+  assert.equal(local.status().conflicts.length, 0);
+  assert.equal(sb.db.doc_number_sequences.find((x) => x.doc_type === "po").next_seq, 2);
+});
+
+test("a queued item the cloud refuses for good is set aside; the rest still upload", async () => {
+  const sb = fakeSupabase();
+  const local = createLocalLedger(ledgerFile());
+  const n = createNumbering(sb, { local });
+  sb.state.offline = true;
+  await n.issue("po", { payload: {} });
+  await n.issue("po", { payload: {} });
+  sb.state.offline = false;
+  const from = sb.from;
+  sb.from = (t) => {
+    const q = from(t);
+    const ins = q.insert;
+    q.insert = (v) => (v.doc_number === "PO/1" ? { then: (res) => res({ data: null, error: { code: "23514", message: "violates check constraint" } }) } : ins(v));
+    return q;
+  };
+  const r = await n.sync();
+  assert.equal(r.pending, 0);
+  assert.deepEqual(sb.db.generated_documents.map((d) => d.doc_number), ["PO/2"]);
+  assert.match(local.status().conflicts[0].message, /could not be uploaded/);
+});

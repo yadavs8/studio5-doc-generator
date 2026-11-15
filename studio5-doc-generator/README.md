@@ -26,6 +26,8 @@ serves the page and its assets, and documents can only carry Studio5's GSTINs an
 | `ACCESS_CODE` | Optional. When set, the app asks for this code once per browser. **Set it on Render.** |
 | `HOST` | Default `127.0.0.1` (this PC only). Render sets `RENDER`, which opens it to the internet. |
 | `ALLOWED_ORIGINS` | Extra web addresses allowed to call the API (comma-separated). Normally empty. |
+| `ALLOWED_HOSTS` | Extra host names this server answers to (comma-separated); Render's own name is added automatically. |
+| `SESSION_SECRET` | Optional. Keeps access-code unlocks valid across restarts (otherwise a new one per start). |
 | `STUDIO5_DOCS_DIR`, `STUDIO5_DATA_DIR` | Where generated files and the offline ledger are kept. |
 | `OFFLINE_LEDGER` | `1`/`0` to force the PC ledger on/off (default: on, except on Render). |
 

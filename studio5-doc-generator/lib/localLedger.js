@@ -4,8 +4,9 @@
 // Only for a generator running on one PC — never on Render, whose disk is wiped on restart.
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
-const EMPTY = () => ({ version: 1, counters: {}, documents: [], queue: [], conflicts: [] });
+const EMPTY = () => ({ version: 1, counters: {}, documents: [], queue: [], conflicts: [], nextId: 1 });
 const HISTORY_LIMIT = 500;
 
 function createLocalLedger(file) {
@@ -51,9 +52,11 @@ function createLocalLedger(file) {
     /** Add to the local history; `queued` means it still has to be uploaded. */
     add(row, { queued }) {
       const doc = { ...row, created_at: row.created_at || new Date().toISOString() };
+      // A unique mark, so an upload can tell "this very document is already there" from "someone else used the number".
+      if (queued) doc.payload = { ...(doc.payload || {}), offline_ref: crypto.randomUUID() };
       data.documents.unshift(doc);
       data.documents = data.documents.slice(0, HISTORY_LIMIT);
-      if (queued) data.queue.push({ op: "insert", row: doc });
+      if (queued) data.queue.push({ id: data.nextId++, op: "insert", row: doc });
       save();
     },
     /** Mark void here, and queue it for the cloud if needed. */
@@ -62,7 +65,7 @@ function createLocalLedger(file) {
       if (doc) Object.assign(doc, { status: "void", void_reason: reason, voided_at: new Date().toISOString() });
       const pendingInsert = data.queue.find((q) => q.op === "insert" && q.row.doc_type === docType && q.row.doc_number === docNumber);
       if (pendingInsert) Object.assign(pendingInsert.row, { status: "void", void_reason: reason, voided_at: new Date().toISOString() });
-      else if (queued) data.queue.push({ op: "void", doc_type: docType, doc_number: docNumber, reason, voided_at: new Date().toISOString() });
+      else if (queued && doc) data.queue.push({ id: data.nextId++, op: "void", doc_type: docType, doc_number: docNumber, reason, voided_at: new Date().toISOString() });
       save();
       return doc || null;
     },
@@ -70,12 +73,18 @@ function createLocalLedger(file) {
       return data.documents.filter((d) => !docType || d.doc_type === docType).slice(0, limit);
     },
     queue: () => data.queue.slice(),
-    /** Remove the first queue entry (after it was uploaded or found to conflict). */
-    shift({ conflict } = {}) {
-      const item = data.queue.shift();
-      if (conflict && item) data.conflicts.push({ ...conflict, at: new Date().toISOString() });
+    /** Remove this queue entry (after it was uploaded, or set aside as a conflict). Removes by id, so a
+     *  second upload run can never remove a different, not-yet-uploaded entry. */
+    done(item, { conflict } = {}) {
+      const i = data.queue.findIndex((q) => q.id === item.id);
+      if (i >= 0) data.queue.splice(i, 1);
+      if (conflict) data.conflicts.push({ ...conflict, at: new Date().toISOString() });
       save();
-      return item;
+    },
+    /** Replace an entry (e.g. "insert" becomes "bump" once the row is uploaded but the counter is not). */
+    replace(item, next) {
+      const i = data.queue.findIndex((q) => q.id === item.id);
+      if (i >= 0) { data.queue[i] = { ...next, id: item.id }; save(); }
     },
     pendingCount: () => data.queue.length,
     status: () => ({ pending: data.queue.length, conflicts: data.conflicts.slice(-20) }),

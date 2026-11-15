@@ -28,8 +28,10 @@ const sameText = (a, b) => {
 };
 const cookieValue = (req, name) => {
   const m = String(req.headers.cookie || "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
-  return m ? decodeURIComponent(m[1]) : null;
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]); } catch { return null; }
 };
+const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
 function createApp({ supabase = null, local = null, env = process.env } = {}) {
   const app = express();
@@ -57,9 +59,16 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
   // to visit cannot drive the generator running on their PC.
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    const own = `${req.protocol}://${req.headers.host}`;
-    const ok = !origin || origin === own || allowedOrigins.has(origin);
-    if (ok && origin && origin !== own) {
+    let originHost = null;
+    try { originHost = origin ? new URL(origin).host : null; } catch { originHost = "?"; }
+    // Compare host names only: behind Render's (or any) proxy the scheme seen here can differ from the browser's.
+    const sameHost = !!originHost && originHost === req.headers.host;
+    const listed = !!origin && allowedOrigins.has(origin);
+    // Browsers also say where a request comes from; a cross-site one is refused unless listed — except simply
+    // opening the page in a new tab.
+    const crossSite = req.headers["sec-fetch-site"] === "cross-site" && !(req.method === "GET" && req.headers["sec-fetch-mode"] === "navigate");
+    const ok = (!origin || sameHost || listed) && (!crossSite || listed);
+    if (ok && listed) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -73,31 +82,62 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
 
   app.use(express.json({ limit: "12mb" }));
 
+  app.get("/health", (req, res) => res.json({ status: "ok" }));
+
+  // ── Optional access code (ACCESS_CODE) ──────────────────────────────────
+  // When set, nothing — not even the page, the logo or the stamp — is served until the code is entered.
+  // The unlock cookie is an HMAC of the code with a secret (SESSION_SECRET, or a random one per start),
+  // so it cannot be turned back into the code. Wrong codes are limited to 5 per 10 minutes per address.
+  const sessionSecret = env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+  const sessionToken = ACCESS_CODE ? crypto.createHmac("sha256", sessionSecret).update(ACCESS_CODE).digest("hex") : null;
+  const failures = new Map();
+  const tooMany = (ip) => {
+    const f = failures.get(ip);
+    if (f && Date.now() - f.first > 10 * 60 * 1000) { failures.delete(ip); return false; }
+    return !!f && f.count >= 5;
+  };
+  const noteFailure = (ip) => {
+    const f = failures.get(ip) || { count: 0, first: Date.now() };
+    f.count++;
+    failures.set(ip, f);
+  };
+  const unlocked = (req) => {
+    if (!ACCESS_CODE) return true;
+    const cookie = cookieValue(req, "s5_access");
+    const header = req.headers["x-access-code"];
+    return (cookie && sameText(cookie, sessionToken)) || (typeof header === "string" && !tooMany(req.ip) && sameText(header, ACCESS_CODE));
+  };
+  app.post("/api/unlock", (req, res) => {
+    if (!ACCESS_CODE) return res.json({ ok: true, required: false });
+    if (tooMany(req.ip)) return res.status(429).json({ error: "Too many wrong codes. Try again in 10 minutes." });
+    if (!req.body || typeof req.body.code !== "string" || !sameText(req.body.code, ACCESS_CODE)) {
+      noteFailure(req.ip);
+      return res.status(401).json({ error: "That access code is not right." });
+    }
+    failures.delete(req.ip);
+    const secure = req.secure || req.headers["x-forwarded-proto"] === "https";
+    res.setHeader("Set-Cookie", `s5_access=${sessionToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${60 * 60 * 24 * 90}${secure ? "; Secure" : ""}`);
+    res.json({ ok: true, required: true });
+  });
+  const UNLOCK_PAGE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studio5 Docs — locked</title><body style="font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;background:#f7f5f2">
+<form id="f" style="background:#fff;padding:24px;border-radius:12px;box-shadow:0 2px 12px #0002;max-width:320px;width:100%">
+<h2 style="margin-top:0">Studio5 Document Generator</h2><label>Access code<br><input id="c" type="password" autofocus style="width:100%;padding:8px;margin:8px 0"></label>
+<button style="padding:8px 16px">Unlock</button><p id="m" style="color:#b0413e"></p></form>
+<script>document.getElementById('f').onsubmit=async(e)=>{e.preventDefault();const r=await fetch('/api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:document.getElementById('c').value})});
+if(r.ok)location.reload();else document.getElementById('m').textContent=(await r.json().catch(()=>({}))).error||'Not accepted.';};</script>`;
+  app.use((req, res, next) => {
+    if (unlocked(req)) return next();
+    if (req.method === "GET" && (req.path === "/" || req.path === "/studio5_doc_generator.html")) return res.type("html").send(UNLOCK_PAGE);
+    res.status(401).json({ error: "Enter the access code first.", code: "ACCESS_CODE_REQUIRED" });
+  });
+
   // ── Static: only the page, the app manifest and assets/ ──────────────────
   const page = (req, res) => res.sendFile(path.join(ROOT, "studio5_doc_generator.html"));
   app.get("/", page);
   app.get("/studio5_doc_generator.html", page);
   app.get("/manifest.json", (req, res) => res.sendFile(path.join(ROOT, "manifest.json")));
   app.use("/assets", express.static(path.join(ROOT, "assets"), { dotfiles: "deny", index: false }));
-  app.get("/health", (req, res) => res.json({ status: "ok" }));
-
-  // ── Optional access code ────────────────────────────────────────────────
-  app.post("/api/unlock", (req, res) => {
-    if (!ACCESS_CODE) return res.json({ ok: true, required: false });
-    if (!req.body || typeof req.body.code !== "string" || !sameText(req.body.code, ACCESS_CODE)) {
-      return res.status(401).json({ error: "That access code is not right." });
-    }
-    const secure = req.secure || req.headers["x-forwarded-proto"] === "https";
-    res.setHeader("Set-Cookie", `s5_access=${sha(ACCESS_CODE)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${60 * 60 * 24 * 90}${secure ? "; Secure" : ""}`);
-    res.json({ ok: true, required: true });
-  });
-  app.use((req, res, next) => {
-    if (!ACCESS_CODE) return next();
-    const header = req.headers["x-access-code"];
-    const cookie = cookieValue(req, "s5_access");
-    if ((typeof header === "string" && sameText(header, ACCESS_CODE)) || (cookie && sameText(cookie, sha(ACCESS_CODE)))) return next();
-    res.status(401).json({ error: "Enter the access code first.", code: "ACCESS_CODE_REQUIRED" });
-  });
 
   // ── Errors people can read; details stay in the server log ──────────────
   function fail(res, e) {
@@ -118,7 +158,7 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
     fs.mkdirSync(base, { recursive: true });
     return path.resolve(base);
   }
-  const subdir = (docType) => SUBDIRS[docType] || "other";
+  const subdir = (docType) => (has(SUBDIRS, docType) ? SUBDIRS[docType] : "other");
   const dateFolder = (d) => (isRealDate(d) ? d : todayIST());
   function targetFolder(docType, date) {
     const dir = path.join(docsBase(), subdir(docType), dateFolder(date));
@@ -215,7 +255,7 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
   app.post("/api/save-generated-doc", upload.single("file"), (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file provided." });
-      const docType = SUBDIRS[req.body.docType] ? req.body.docType : "pi";
+      const docType = has(SUBDIRS, req.body.docType) ? req.body.docType : "pi";
       const dir = targetFolder(docType, req.body.docDate);
       const full = safeFileIn(dir, req.body.filename || req.file.originalname);
       if (!full) return res.status(400).json({ error: "The file name must be a plain .pdf or .docx name." });
@@ -238,7 +278,7 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
 
   app.get("/api/generated-docs", (req, res) => {
     try {
-      const docType = SUBDIRS[req.query.docType] ? req.query.docType : "pi";
+      const docType = has(SUBDIRS, req.query.docType) ? req.query.docType : "pi";
       const base = path.join(docsBase(), subdir(docType));
       if (!fs.existsSync(base)) return res.json({ docType, folders: [] });
       const folders = fs.readdirSync(base, { withFileTypes: true })
@@ -258,7 +298,7 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
   app.get("/api/download-file", (req, res) => {
     try {
       const { docType, date, filename } = req.query;
-      if (!SUBDIRS[docType] || !isRealDate(date) || !filename) return res.status(400).send("Missing or invalid parameters.");
+      if (!has(SUBDIRS, docType) || !isRealDate(date) || !filename) return res.status(400).send("Missing or invalid parameters.");
       const full = safeFileIn(path.join(docsBase(), subdir(docType), date), filename);
       if (!full || !fs.existsSync(full)) return res.status(404).send("File not found.");
       res.download(full, path.basename(full));
@@ -277,10 +317,10 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
   });
 
   // What was numbered offline and is still waiting to be uploaded, and any conflicts found when uploading.
-  app.get("/api/offline-status", async (req, res) => {
+  app.get("/api/offline-status", (req, res) => res.json({ offlineLedger: !!local, ...numbering.status() }));
+  app.post("/api/sync", async (req, res) => {
     try {
-      if (req.query.sync === "1") await numbering.sync();
-      res.json({ offlineLedger: !!local, ...numbering.status() });
+      res.json({ offlineLedger: !!local, ...(await numbering.sync()), ...numbering.status() });
     } catch (e) { fail(res, e); }
   });
 
@@ -290,6 +330,13 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
 
   // Anything else: not here (and never a file from the app folder).
   app.use((req, res) => res.status(404).json({ error: "Not found." }));
+  // Bad JSON, oversize bodies, anything unexpected: a plain message, never a stack trace or a path.
+  // eslint-disable-next-line no-unused-vars
+  app.use((e, req, res, next) => {
+    if (e && (e.type === "entity.parse.failed")) return res.status(400).json({ error: "The request was not valid JSON." });
+    if (e && (e.type === "entity.too.large" || e.code === "LIMIT_FILE_SIZE")) return res.status(413).json({ error: "The request is too large." });
+    fail(res, e);
+  });
   return app;
 }
 
