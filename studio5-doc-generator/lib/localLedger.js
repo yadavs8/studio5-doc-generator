@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const EMPTY = () => ({ version: 1, counters: {}, documents: [], queue: [], conflicts: [], nextId: 1 });
+const EMPTY = () => ({ version: 1, counters: {}, documents: [], queue: [], conflicts: [], nextId: 1, tracker: { sites: [], sitesAt: null, linked: {} } });
 const HISTORY_LIMIT = 500;
 
 function createLocalLedger(file) {
@@ -86,6 +86,30 @@ function createLocalLedger(file) {
       const i = data.queue.findIndex((q) => q.id === item.id);
       if (i >= 0) { data.queue[i] = { ...next, id: item.id }; save(); }
     },
+    /** Add any other queued job (the PO tracker's link / attach / cancel). */
+    enqueue(job) {
+      data.queue.push({ ...job, id: data.nextId++ });
+      save();
+    },
+    /** The document's number is still waiting to be uploaded (made offline). */
+    numberPending(docType, docNumber) {
+      return data.queue.some((q) => (q.op === "insert" || q.op === "bump") && q.row.doc_type === docType && q.row.doc_number === docNumber);
+    },
+    /** The number clashed with one used elsewhere (not a tracker problem). */
+    numberConflict(docType, docNumber) {
+      return data.conflicts.some((c) => c.source !== "tracker" && c.doc_type === docType && c.doc_number === docNumber);
+    },
+    /** Tracker work for this document must wait: its number or its tracker record is still queued. */
+    trackerWaiting(docType, docNumber) {
+      return this.numberPending(docType, docNumber)
+        || data.queue.some((q) => q.op === "tracker.link" && q.doc_type === docType && q.doc_number === docNumber);
+    },
+    // The tracker's site list (for the picker when offline) and which documents are linked to it.
+    trackerSites: () => data.tracker.sites.slice(),
+    setTrackerSites(list) { data.tracker.sites = list; data.tracker.sitesAt = new Date().toISOString(); save(); },
+    trackerRemember(ref, siteId) { data.tracker.linked[ref] = siteId; save(); },
+    trackerForget(ref) { delete data.tracker.linked[ref]; save(); },
+    trackerKnows: (ref) => Object.prototype.hasOwnProperty.call(data.tracker.linked, ref),
     pendingCount: () => data.queue.length,
     status: () => ({ pending: data.queue.length, conflicts: data.conflicts.slice(-20) }),
   };

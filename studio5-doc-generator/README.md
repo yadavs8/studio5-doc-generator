@@ -15,6 +15,11 @@ ledger (`data/ledger.json`); documents made offline are uploaded to Supabase aut
 internet is back (every minute). If a number was meanwhile used elsewhere (e.g. from Render), it is
 reported as a conflict at `/api/offline-status` instead of being duplicated. Keep `data/` backed up.
 
+**PO tracker link:** on the PI and invoice forms, pick the **PO tracker site** and the document is added to the
+PO tracker under that project, with its file (an invoice can be marked as made from one of the site's open PIs).
+Voiding it here cancels it there. Without internet this waits in the same queue. Needs the tracker's
+`migration_017_doc_generator_link.sql`. POs to vendors and challans are not linked (decision 0005).
+
 **Safety (no login, by choice):** the app listens on this PC only, only its own page can call it, it only
 serves the page and its assets, and documents can only carry Studio5's GSTINs and bank accounts.
 

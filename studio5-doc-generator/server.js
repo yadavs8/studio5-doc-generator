@@ -31,8 +31,11 @@ app.listen(PORT, HOST, () => {
 
 // Upload whatever was numbered offline, as soon as the internet is back.
 if (local && supabase) {
+  // Numbers first, then the PO tracker work that waits behind them.
   const tick = () => app.locals.numbering.sync()
     .then((r) => { if (r.uploaded || r.conflicts) console.log(`[sync] uploaded ${r.uploaded}, conflicts ${r.conflicts}, still waiting ${r.pending}`); })
+    .then(() => app.locals.tracker.sync())
+    .then((t) => { if (t.tracker_done || t.tracker_set_aside) console.log(`[sync] PO tracker: done ${t.tracker_done}, set aside ${t.tracker_set_aside}`); })
     .catch((e) => console.error("[sync]", e.message));
   tick();
   setInterval(tick, 60 * 1000).unref();
