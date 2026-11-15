@@ -1,3 +1,47 @@
+# Studio5 Document Generator
+
+Generates Studio5's Purchase Orders, Proforma Invoices, GST Tax Invoices and Delivery Challans as Word
+files, with document numbers that never repeat. One-page tool (`studio5_doc_generator.html`) served by a
+small Node app (`server.js` → `app.js`).
+
+## Run it on your PC (works without internet)
+1. Install Node.js 20+ once. In this folder: `npm ci`.
+2. Optional: create `.env` with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (the cloud number ledger,
+   same Supabase project as the PO tracker) and `GEMINI_API_KEY` (reading photos of measurement sheets).
+3. Double-click `launch_app.vbs` (or `start_app.bat`). It opens http://localhost:3000.
+
+**Offline:** everything works without internet except reading photos. Numbers come from the PC's own
+ledger (`data/ledger.json`); documents made offline are uploaded to Supabase automatically once the
+internet is back (every minute). If a number was meanwhile used elsewhere (e.g. from Render), it is
+reported as a conflict at `/api/offline-status` instead of being duplicated. Keep `data/` backed up.
+
+**Safety (no login, by choice):** the app listens on this PC only, only its own page can call it, it only
+serves the page and its assets, and documents can only carry Studio5's GSTINs and bank accounts.
+
+## Settings (environment variables)
+| Variable | Meaning |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Cloud number ledger (server-side only, never in the page). |
+| `GEMINI_API_KEY` | Reading photos / PDFs of measurement sheets (needs internet). |
+| `ACCESS_CODE` | Optional. When set, the app asks for this code once per browser. **Set it on Render.** |
+| `HOST` | Default `127.0.0.1` (this PC only). Render sets `RENDER`, which opens it to the internet. |
+| `ALLOWED_ORIGINS` | Extra web addresses allowed to call the API (comma-separated). Normally empty. |
+| `ALLOWED_HOSTS` | Extra host names this server answers to (comma-separated); Render's own name is added automatically. |
+| `SESSION_SECRET` | Optional. Keeps access-code unlocks valid across restarts (otherwise a new one per start). |
+| `STUDIO5_DOCS_DIR`, `STUDIO5_DATA_DIR` | Where generated files and the offline ledger are kept. |
+| `OFFLINE_LEDGER` | `1`/`0` to force the PC ledger on/off (default: on, except on Render). |
+
+## Tests
+`npm test` — numbering, money/GST maths, validation, the API's safety rules, offline queue, and that every
+document type builds. CI runs them on every push and pull request.
+
+## Database
+Run once, in the Supabase SQL editor of the studio5-portal project: `supabase/migration_001_document_ledger.sql`
+(already done), then `supabase/migration_002_lock_numbering.sql` (locks the numbering functions to this backend).
+
+---
+
+## Earlier notes
 # Studio5 Document Generator — Backend
 
 This is the instant document-generation API for Studio5's Purchase Orders, Proforma
