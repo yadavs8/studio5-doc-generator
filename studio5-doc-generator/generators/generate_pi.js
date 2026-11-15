@@ -109,7 +109,7 @@ payload.sections.forEach((sec, si) => {
           width: { size: spanWidth(cols, 0, amountIdx), type: WidthType.DXA },
           children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: label, bold, size })] })]
         }),
-        cell(fmt(value), { width: colWidths[amountIdx], align: AlignmentType.RIGHT, bold }),
+        cell(typeof value === "string" ? value : fmt(value), { width: colWidths[amountIdx], align: AlignmentType.RIGHT, bold }),
         ...blankCells(cols, amountIdx + 1),
       ]
     });
@@ -123,7 +123,8 @@ payload.sections.forEach((sec, si) => {
     attachedTotals.push(makeTotalRow("Project Total (before GST)", payload.project_total, true, 20));
     attachedTotals.push(makeTotalRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false, 20));
     if (payload.round_off) {
-      attachedTotals.push(makeTotalRow("Round off", Math.abs(payload.round_off), false, 20));
+      const ro = Number(payload.round_off) || 0;
+      attachedTotals.push(makeTotalRow("Round off", (ro > 0 ? "+" : "-") + Math.abs(ro).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), false, 20));
     }
     attachedTotals.push(makeTotalRow("GRAND TOTAL", payload.grand_total, true, 20));
   }
@@ -180,7 +181,7 @@ const doc = new Document({
       new Paragraph({ text: "" }),
       new Paragraph({ children: [new TextRun({ text: "BUYER'S DETAILS", bold: true, size: 20 })] }),
       new Paragraph({ children: [new TextRun({ text: payload.buyer.name, size: 20 })] }),
-      ...payload.buyer.address.split(/\r?\n/).map(line => new Paragraph({ children: [new TextRun({ text: line, size: 20 })] })),
+      ...String(payload.buyer.address || "").split(/\r?\n/).map(line => new Paragraph({ children: [new TextRun({ text: line, size: 20 })] })),
       ...(payload.buyer.gstin ? [new Paragraph({ children: [new TextRun({ text: `GSTIN: ${payload.buyer.gstin}`, size: 20 })] })] : []),
       ...(payload.buyer.attn ? [new Paragraph({ children: [new TextRun({ text: `Kind Attn. ${payload.buyer.attn}`, size: 20 })] })] : []),
       new Paragraph({ text: "" }),

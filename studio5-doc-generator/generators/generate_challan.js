@@ -84,7 +84,7 @@ const doc = new Document({
       new Paragraph({ text: "" }),
       new Paragraph({ children: [new TextRun({ text: "RECEIVER DETAILS", bold: true, size: 20 })] }),
       new Paragraph({ children: [new TextRun({ text: payload.receiver_name, size: 20 })] }),
-      ...payload.site_address.split(/\r?\n/).map(line => new Paragraph({ children: [new TextRun({ text: line, size: 20 })] })),
+      ...String(payload.site_address || "").split(/\r?\n/).map(line => new Paragraph({ children: [new TextRun({ text: line, size: 20 })] })),
       new Paragraph({ text: "" }),
       ...(payload.subject ? [
         new Paragraph({ children: [

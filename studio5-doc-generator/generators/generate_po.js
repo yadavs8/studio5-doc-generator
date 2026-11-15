@@ -214,7 +214,7 @@ const doc = new Document({
       new Paragraph({ text: "" }),
       new Paragraph({ children: [new TextRun({ text: "VENDOR / SUPPLIER DETAILS", bold: true, size: 20 })] }),
       new Paragraph({ children: [new TextRun({ text: `Vendor Name: ${payload.vendor.name}`, size: 20 })] }),
-      new Paragraph({ children: [new TextRun({ text: `Address: ${payload.vendor.address}`, size: 20 })] }),
+      new Paragraph({ children: [new TextRun({ text: `Address: ${payload.vendor.address || ""}`, size: 20 })] }),
       new Paragraph({ children: [new TextRun({ text: `GSTIN: ${payload.vendor.gstin}`, size: 20 })] }),
       new Paragraph({ children: [new TextRun({ text: `Contact Person / Mobile: ${payload.vendor.contact}`, size: 20 })] }),
       new Paragraph({ text: "" }),

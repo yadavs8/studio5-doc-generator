@@ -8,7 +8,13 @@ const { layoutColumns, spanWidth, blankCells } = require("../lib/columnLayout.js
 async function generateInvoice(payload, logoBuffer, stampBuffer) {
 
 function fmt(n) {
-  return Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const v = Number(n);
+  return (Number.isFinite(v) ? v : 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+// "+0.42" / "-0.40" so the round-off's direction is visible.
+function signed(n) {
+  const v = Number(n) || 0;
+  return (v > 0 ? "+" : v < 0 ? "-" : "") + fmt(Math.abs(v));
 }
 
 function cell(text, opts = {}) {
@@ -109,7 +115,7 @@ payload.sections.forEach((sec, si) => {
           width: { size: spanWidth(cols, 0, amountIdx), type: WidthType.DXA },
           children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: label, bold, size })] })]
         }),
-        cell(fmt(value), { width: colWidths[amountIdx], align: AlignmentType.RIGHT, bold }),
+        cell(typeof value === "string" ? value : fmt(value), { width: colWidths[amountIdx], align: AlignmentType.RIGHT, bold }),
         ...blankCells(cols, amountIdx + 1),
       ]
     });
@@ -120,10 +126,17 @@ payload.sections.forEach((sec, si) => {
   const isLastSection = si === payload.sections.length - 1;
   const attachedTotals = [];
   if (isLastSection) {
-    attachedTotals.push(makeTotalRow("Project Total (before GST)", payload.project_total, true, 20));
-    attachedTotals.push(makeTotalRow(`Add: GST @ ${payload.gst_pct}%`, payload.gst_amt, false, 20));
-    if (payload.round_off) {
-      attachedTotals.push(makeTotalRow("Round off", Math.abs(payload.round_off), false, 20));
+    attachedTotals.push(makeTotalRow("Taxable value (before GST)", payload.project_total, true, 20));
+    // GST split by place of supply (decision 0002): same state → CGST + SGST, otherwise IGST.
+    const half = Number(payload.gst_pct) / 2;
+    if (Number(payload.igst_amt) > 0 || (Number(payload.gst_amt) === 0 && payload.place_of_supply_code && payload.issuing_address && String(payload.issuing_address.gstin).slice(0, 2) !== payload.place_of_supply_code)) {
+      attachedTotals.push(makeTotalRow(`Add: IGST @ ${payload.gst_pct}%`, payload.igst_amt, false, 20));
+    } else {
+      attachedTotals.push(makeTotalRow(`Add: CGST @ ${half}%`, payload.cgst_amt, false, 20));
+      attachedTotals.push(makeTotalRow(`Add: SGST @ ${half}%`, payload.sgst_amt, false, 20));
+    }
+    if (Number(payload.round_off)) {
+      attachedTotals.push(makeTotalRow("Round off", signed(payload.round_off), false, 20));
     }
     attachedTotals.push(makeTotalRow("GRAND TOTAL", payload.grand_total, true, 20));
   }
@@ -151,7 +164,7 @@ const doc = new Document({
       }
     },
     children: [
-      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "INVOICE", bold: true, size: 32 })] }),
+      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "TAX INVOICE", bold: true, size: 32 })] }),
       new Paragraph({ text: "" }),
       new Table({
         width: { size: totalWidth, type: WidthType.DXA },
@@ -166,6 +179,8 @@ const doc = new Document({
             new TableCell({ width: { size: 4306, type: WidthType.DXA }, children: [
               new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `Invoice No.: ${payload.invoice_no || "-"}`, bold: true, size: 20 })] }),
               new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `Invoice Date: ${payload.invoice_date || "-"}`, size: 20 })] }),
+              ...(payload.place_of_supply_code ? [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `Place of Supply: ${payload.place_of_supply_name || ""} (${payload.place_of_supply_code})`, size: 20 })] })] : []),
+              ...(payload.sac_code ? [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `SAC: ${payload.sac_code}`, size: 20 })] })] : []),
             ]}),
           ]})
         ]
@@ -179,7 +194,7 @@ const doc = new Document({
       new Paragraph({ text: "" }),
       new Paragraph({ children: [new TextRun({ text: "BUYER'S DETAILS", bold: true, size: 20 })] }),
       new Paragraph({ children: [new TextRun({ text: payload.buyer.name, size: 20 })] }),
-      ...payload.buyer.address.split(/\r?\n/).map(line => new Paragraph({ children: [new TextRun({ text: line, size: 20 })] })),
+      ...String(payload.buyer.address || "").split(/\r?\n/).map(line => new Paragraph({ children: [new TextRun({ text: line, size: 20 })] })),
       ...(payload.buyer.gstin ? [new Paragraph({ children: [new TextRun({ text: `GSTIN: ${payload.buyer.gstin}`, size: 20 })] })] : []),
       ...(payload.buyer.attn ? [new Paragraph({ children: [new TextRun({ text: `Kind Attn. ${payload.buyer.attn}`, size: 20 })] })] : []),
       new Paragraph({ text: "" }),

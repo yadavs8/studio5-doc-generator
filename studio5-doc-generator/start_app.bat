@@ -1,14 +1,15 @@
 @echo off
-cd /d "C:\Users\dell\Projects\studio5-doc-generator\studio5-doc-generator"
+rem Starts the Studio5 doc generator on this PC only (http://localhost:3000) and opens it as an app window.
+cd /d "%~dp0"
 curl -s http://localhost:3000/health >nul 2>&1
 if %errorlevel% neq 0 (
-  start /b "" "C:\Program Files\nodejs\node.exe" server.js
-  timeout /t 1 /nobreak >nul
+  start /b "" node server.js
+  timeout /t 2 /nobreak >nul
 )
-if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
-  start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --app="http://localhost:3000"
-) else if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
-  start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app="http://localhost:3000"
+if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" (
+  start "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" --app="http://localhost:3000"
+) else if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" (
+  start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --app="http://localhost:3000"
 ) else (
   start http://localhost:3000
 )
