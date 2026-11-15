@@ -71,39 +71,74 @@ function assertValidDocType(docType) {
   if (!VALID_DOC_TYPES.includes(docType)) throw err("INVALID_DOC_TYPE", `Unknown document type: ${docType}`);
 }
 
-function createNumbering(supabase) {
-  const need = () => {
-    if (!supabase) {
-      throw err("NOT_CONFIGURED", "Document numbering is not set up on this server (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing), so no number can be issued safely.");
-    }
-  };
-  const ctx = (docType, { addressKey, date }) => ({ fy: fyFromDate(date), series: seriesFor(addressKey) });
+/** True when Supabase could not be reached at all (no internet / DNS / timeout), as opposed to a real error. */
+function isNetworkError(e) {
+  const t = `${(e && e.message) || ""} ${(e && e.details) || ""} ${(e && e.code) || ""}`;
+  return /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network|socket hang up/i.test(t);
+}
 
-  /** What the next automatic number would be, without spending it. */
+/**
+ * Numbering backed by Supabase, with an optional ledger on this PC (`local`, see localLedger.js):
+ *  - online: Supabase decides; this PC remembers counters and history;
+ *  - offline (Supabase unreachable) or Supabase not configured: this PC's ledger decides, and every
+ *    change is queued and uploaded by sync() once Supabase can be reached. A number that was meanwhile
+ *    used elsewhere is reported as a conflict, never uploaded twice.
+ * Without `local`, numbering refuses (503) when Supabase is missing, instead of guessing.
+ */
+function createNumbering(supabase, { local = null } = {}) {
+  const ctx = (docType, { addressKey, date }) => ({ fy: fyFromDate(date), series: seriesFor(addressKey) });
+  const notConfigured = () => err("NOT_CONFIGURED", "Document numbering is not set up on this server (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing), so no number can be issued safely.");
+
+  /** Runs `online` against Supabase; on no-connection (or no Supabase) runs `offline` with the local ledger. */
+  async function either(online, offline) {
+    if (supabase) {
+      try {
+        return { value: await online(), offline: false };
+      } catch (e) {
+        if (!local || !isNetworkError(e)) throw e;
+      }
+    } else if (!local) {
+      throw notConfigured();
+    }
+    return { value: await offline(), offline: true };
+  }
+  const check = ({ data, error }) => { if (error) throw error; return data; };
+
   async function preview(docType, opts = {}) {
     assertValidDocType(docType);
-    need();
     const c = ctx(docType, opts);
-    const { data, error } = await supabase.from("doc_number_sequences").select("next_seq")
-      .eq("doc_type", docType).eq("scope_key", scopeKey(docType, c)).maybeSingle();
-    if (error) throw error;
-    return formatNumber(docType, data ? data.next_seq : 1, c);
+    const scope = scopeKey(docType, c);
+    const { value: seq } = await either(async () => {
+      const row = check(await supabase.from("doc_number_sequences").select("next_seq")
+        .eq("doc_type", docType).eq("scope_key", scope).maybeSingle());
+      const next = row ? row.next_seq : 1;
+      if (local) local.seen(docType, scope, next);
+      return Math.max(next, local ? local.next(docType, scope) : 1);
+    }, async () => local.next(docType, scope));
+    return formatNumber(docType, seq, c);
   }
 
-  async function record(row) {
+  async function recordRemote(row) {
     const { error } = await supabase.from("generated_documents").insert(row);
     if (error && error.code === "23505") throw err("DUPLICATE_NUMBER", `Document number "${row.doc_number}" has already been issued.`);
     if (error) throw error;
   }
 
-  /**
-   * Issues one document: picks (or checks) its number, builds the file with that number, then records it.
-   *  - typed number: must match the format and be unused; it is recorded only once the file was built,
-   *    and only then moves its own counter (its own FY / series) forward.
-   *  - automatic number: allocated atomically; if the file cannot be built, the number is recorded as void
-   *    with the reason, so the gap in the sequence is explained.
-   * `build(docNumber)` returns the file (or nothing for record-only calls).
-   */
+  /** Records a finished document: in Supabase (and this PC's history), or queued here when offline. */
+  async function record(row, offline) {
+    if (!offline) {
+      try {
+        await recordRemote(row);
+        if (local) local.add(row, { queued: false });
+        return false;
+      } catch (e) {
+        if (!local || !isNetworkError(e)) throw e;
+      }
+    }
+    local.add(row, { queued: true });
+    return true;
+  }
+
   async function issue(docType, { docNumber, addressKey, date, payload, counterpartyName, totalAmount, build } = {}) {
     assertValidDocType(docType);
     const typed = docNumber && String(docNumber).trim();
@@ -114,7 +149,7 @@ function createNumbering(supabase) {
         throw err("INVALID_NUMBER", `"${typed}" is not a valid ${docType.toUpperCase()} number. Expected e.g. ${formatNumber(docType, 7, { fy: fyFromDate(date), series: seriesFor(addressKey) })}.`);
       }
     }
-    need();
+    if (!supabase && !local) throw notConfigured();
     const row = {
       doc_type: docType,
       issuing_address_key: addressKey || null,
@@ -124,64 +159,131 @@ function createNumbering(supabase) {
     };
 
     if (typed) {
-      const { data: existing, error } = await supabase.from("generated_documents").select("id")
-        .eq("doc_type", docType).eq("doc_number", typed).maybeSingle();
-      if (error) throw error;
-      if (existing) throw err("DUPLICATE_NUMBER", `Document number "${typed}" has already been issued.`);
-      const file = build ? await build(typed) : undefined;
-      await record({ ...row, doc_number: typed, status: "issued" });
       const c = { fy: parsed.fy || fyFromDate(date), series: parsed.series || seriesFor(addressKey) };
-      const { error: bumpErr } = await supabase.rpc("fn_bump_document_sequence", {
-        p_doc_type: docType, p_scope_key: scopeKey(docType, c), p_at_least: parsed.seq + 1,
-      });
-      if (bumpErr) console.error("[numbering] counter not advanced after a typed number:", bumpErr.message);
-      return { docNumber: typed, file };
+      const scope = scopeKey(docType, c);
+      const { value: taken, offline } = await either(
+        async () => !!check(await supabase.from("generated_documents").select("id").eq("doc_type", docType).eq("doc_number", typed).maybeSingle()),
+        async () => false,
+      );
+      if (taken || (local && local.has(docType, typed))) throw err("DUPLICATE_NUMBER", `Document number "${typed}" has already been issued.`);
+      const file = build ? await build(typed) : undefined;
+      const queued = await record({ ...row, doc_number: typed, status: "issued" }, offline);
+      if (local) local.seen(docType, scope, parsed.seq + 1);
+      if (!queued) {
+        const { error: bumpErr } = await supabase.rpc("fn_bump_document_sequence", { p_doc_type: docType, p_scope_key: scope, p_at_least: parsed.seq + 1 });
+        if (bumpErr) console.error("[numbering] counter not advanced after a typed number:", bumpErr.message);
+      }
+      return { docNumber: typed, file, offline: queued };
     }
 
     const c = ctx(docType, { addressKey, date });
-    const { data: seq, error: seqErr } = await supabase.rpc("fn_allocate_document_number", {
-      p_doc_type: docType, p_scope_key: scopeKey(docType, c),
-    });
-    if (seqErr) throw seqErr;
+    const scope = scopeKey(docType, c);
+    let { value: seq, offline } = await either(
+      async () => check(await supabase.rpc("fn_allocate_document_number", { p_doc_type: docType, p_scope_key: scope })),
+      async () => local.take(docType, scope),
+    );
+    // Online but this PC already used higher numbers offline (not yet uploaded): skip past them.
+    if (!offline && local && seq < local.next(docType, scope) && local.pendingCount() > 0) {
+      while (local.has(docType, formatNumber(docType, seq, c))) {
+        seq = check(await supabase.rpc("fn_allocate_document_number", { p_doc_type: docType, p_scope_key: scope }));
+      }
+    }
+    if (!offline && local) local.seen(docType, scope, seq + 1);
     const number = formatNumber(docType, seq, c);
     let file;
     try {
       file = build ? await build(number) : undefined;
     } catch (e) {
-      await record({ ...row, doc_number: number, status: "void", void_reason: `Document could not be generated: ${String(e.message).slice(0, 200)}`, voided_at: new Date().toISOString() })
+      await record({ ...row, doc_number: number, status: "void", void_reason: `Document could not be generated: ${String(e.message).slice(0, 200)}`, voided_at: new Date().toISOString() }, offline)
         .catch((re) => console.error("[numbering] could not record the failed number:", re.message));
       throw e;
     }
-    await record({ ...row, doc_number: number, status: "issued" });
-    return { docNumber: number, file };
+    const queued = await record({ ...row, doc_number: number, status: "issued" }, offline);
+    return { docNumber: number, file, offline: queued };
   }
 
   async function voidDocument(docType, docNumber, reason) {
     assertValidDocType(docType);
-    need();
-    const { data, error } = await supabase.from("generated_documents")
-      .update({ status: "void", void_reason: reason || null, voided_at: new Date().toISOString() })
-      .eq("doc_type", docType).eq("doc_number", docNumber).eq("status", "issued").select().maybeSingle();
-    if (error) throw error;
-    if (!data) throw err("NOT_FOUND", `No issued ${docType} document "${docNumber}" (it may already be void).`);
-    return data;
+    const { value } = await either(async () => {
+      const data = check(await supabase.from("generated_documents")
+        .update({ status: "void", void_reason: reason || null, voided_at: new Date().toISOString() })
+        .eq("doc_type", docType).eq("doc_number", docNumber).eq("status", "issued").select().maybeSingle());
+      if (local) local.void(docType, docNumber, reason || null, { queued: false });
+      if (!data) {
+        // It may only exist on this PC so far (made offline, not uploaded yet).
+        const here = local && local.list(docType, 1000).find((d) => d.doc_number === docNumber);
+        if (here) return here;
+        throw err("NOT_FOUND", `No issued ${docType} document "${docNumber}" (it may already be void).`);
+      }
+      return data;
+    }, async () => {
+      const doc = local.void(docType, docNumber, reason || null, { queued: !!supabase });
+      if (!doc) throw err("NOT_FOUND", `No issued ${docType} document "${docNumber}" on this PC (it may already be void).`);
+      return doc;
+    });
+    return value;
   }
 
   async function listDocuments(docType, limit = 25) {
-    need();
-    let q = supabase.from("generated_documents")
-      .select("id, doc_type, doc_number, status, void_reason, counterparty_name, total_amount, created_at, voided_at")
-      .order("created_at", { ascending: false }).limit(limit);
-    if (docType) q = q.eq("doc_type", docType);
-    const { data, error } = await q;
-    if (error) throw error;
-    return data;
+    const { value } = await either(async () => {
+      let q = supabase.from("generated_documents")
+        .select("id, doc_type, doc_number, status, void_reason, counterparty_name, total_amount, created_at, voided_at")
+        .order("created_at", { ascending: false }).limit(limit);
+      if (docType) q = q.eq("doc_type", docType);
+      const rows = check(await q);
+      // Documents made offline and not uploaded yet are shown too, marked as waiting.
+      const waiting = local ? local.queue().filter((x) => x.op === "insert" && (!docType || x.row.doc_type === docType)).map((x) => ({ ...x.row, pending_upload: true })) : [];
+      return [...waiting, ...rows].slice(0, limit);
+    }, async () => {
+      const waiting = new Set(local.queue().filter((x) => x.op === "insert").map((x) => `${x.row.doc_type}|${x.row.doc_number}`));
+      return local.list(docType, limit).map((d) => ({ ...d, pending_upload: waiting.has(`${d.doc_type}|${d.doc_number}`) }));
+    });
+    return value;
   }
 
-  return { preview, issue, voidDocument, listDocuments };
+  /** Uploads what was done offline. Safe to call any time; stops quietly while still offline. */
+  async function sync() {
+    if (!local) return { uploaded: 0, conflicts: 0, pending: 0 };
+    if (!supabase) return { uploaded: 0, conflicts: 0, pending: local.pendingCount() };
+    let uploaded = 0, conflicts = 0;
+    for (const item of local.queue()) {
+      try {
+        if (item.op === "insert") {
+          try {
+            await recordRemote(item.row);
+          } catch (e) {
+            if (e.code !== "DUPLICATE_NUMBER") throw e;
+            local.shift({ conflict: { doc_type: item.row.doc_type, doc_number: item.row.doc_number, message: `Number ${item.row.doc_number} was already used elsewhere while this PC was offline. Issue this document again with a new number and void the old copy.` } });
+            conflicts++;
+            continue;
+          }
+          const parsed = parseTypedNumber(item.row.doc_type, item.row.doc_number);
+          if (parsed) {
+            const c = { fy: parsed.fy || fyFromDate(), series: parsed.series || seriesFor(item.row.issuing_address_key) };
+            check(await supabase.rpc("fn_bump_document_sequence", { p_doc_type: item.row.doc_type, p_scope_key: scopeKey(item.row.doc_type, c), p_at_least: parsed.seq + 1 }));
+          }
+        } else if (item.op === "void") {
+          check(await supabase.from("generated_documents")
+            .update({ status: "void", void_reason: item.reason, voided_at: item.voided_at })
+            .eq("doc_type", item.doc_type).eq("doc_number", item.doc_number).eq("status", "issued").select().maybeSingle());
+        }
+        local.shift();
+        uploaded++;
+      } catch (e) {
+        if (isNetworkError(e)) break; // still offline — try again later
+        console.error("[sync] could not upload", item, e.message || e);
+        break;
+      }
+    }
+    return { uploaded, conflicts, pending: local.pendingCount() };
+  }
+
+  const status = () => (local ? local.status() : { pending: 0, conflicts: [] });
+
+  return { preview, issue, voidDocument, listDocuments, sync, status };
 }
 
 module.exports = {
   ADDRESS_SERIES_CODE, VALID_DOC_TYPES,
-  todayIST, fyFromDate, formatNumber, parseTypedNumber, createNumbering,
+  todayIST, fyFromDate, formatNumber, parseTypedNumber, createNumbering, isNetworkError,
 };

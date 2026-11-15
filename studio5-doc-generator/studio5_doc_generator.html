@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Studio5 Docs">
 <link rel="apple-touch-icon" href="/assets/logo.png">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="/assets/vendor/html2pdf.bundle.min.js"></script>
 <script src="/assets/brand_assets.js"></script>
 <style>
   :root {
@@ -461,6 +461,7 @@
         <table>
           <tr><td>Project Total (before GST)</td><td id="pi-project-total">0.00</td></tr>
           <tr><td>GST % <input id="pi-gst-pct" value="18" style="width:50px; display:inline-block; margin-left:6px;" onchange="recalcPI()"></td><td id="pi-gst-amt">0.00</td></tr>
+          <tr><td>Round off</td><td id="pi-round-off">0.00</td></tr>
           <tr><td><strong>Grand Total</strong></td><td id="pi-grand-total"><strong>0.00</strong></td></tr>
         </table>
       </div>
@@ -495,7 +496,7 @@
       <select id="inv-address" onchange="autofillNumber('inv-no','invoice',this.value)"></select>
       <div class="row2">
         <div><label>Invoice No.</label><input id="inv-no" placeholder="S51/26-27/001" oninput="this.dataset.autofilled=''"></div>
-        <div><label>Invoice Date</label><input id="inv-date" type="date"></div>
+        <div><label>Invoice Date</label><input id="inv-date" type="date" onchange="autofillNumber('inv-no','invoice',document.getElementById('inv-address').value)"></div>
       </div>
       <label>Bank Account to show</label>
       <select id="inv-bank">
@@ -512,7 +513,9 @@
       <select id="inv-buyer-select" onchange="applyPartySelection('inv')"></select>
       <div class="row2">
         <div><label>Buyer Name</label><input id="inv-buyer-name"></div>
-        <div><label>Buyer GSTIN (optional)</label><input id="inv-buyer-gstin"></div>
+        <div><label>Buyer GSTIN (optional)</label><input id="inv-buyer-gstin" oninput="recalcINV()"></div>
+        <div><label>Place of supply (state code, optional)</label><input id="inv-place-of-supply" maxlength="2" placeholder="Auto: from buyer GSTIN, else your state" oninput="recalcINV()"></div>
+        <div><label>SAC code (optional)</label><input id="inv-sac" maxlength="10" placeholder="Printed on the tax invoice"></div>
       </div>
       <label>Buyer Address</label>
       <textarea id="inv-buyer-address"></textarea>
@@ -545,6 +548,8 @@
         <table>
           <tr><td>Project Total (before GST)</td><td id="inv-project-total">0.00</td></tr>
           <tr><td>GST % <input id="inv-gst-pct" value="18" style="width:50px; display:inline-block; margin-left:6px;" onchange="recalcINV()"></td><td id="inv-gst-amt">0.00</td></tr>
+          <tr><td id="inv-gst-split-label" style="font-size:12px; color:var(--muted);">GST split</td><td id="inv-gst-split" style="font-size:12px; color:var(--muted);">—</td></tr>
+          <tr><td>Round off</td><td id="inv-round-off">0.00</td></tr>
           <tr><td><strong>Grand Total</strong></td><td id="inv-grand-total"><strong>0.00</strong></td></tr>
         </table>
       </div>
@@ -784,18 +789,40 @@ const localDB = {
 
 let backendUrl = '';
 
-async function loadBackendUrl() {
-  try {
-    const res = await localDB.get('studio5_backend_url');
-    if (res && res.value) {
-      backendUrl = res.value;
-    } else if (window.location.protocol.startsWith('http')) {
-      backendUrl = window.location.origin;
-    } else {
-      backendUrl = '';
+// Today's date in India (YYYY-MM-DD). new Date().toISOString() is the UTC date — yesterday before 05:30 IST.
+function todayIST() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+// fetch() for the generator's API. If the server has an access code switched on (ACCESS_CODE), asks for it
+// once, unlocks, and retries; the browser keeps the unlock for 90 days.
+async function apiFetch(url, init) {
+  const opts = Object.assign({ credentials: 'same-origin' }, init || {});
+  let res = await fetch(url, opts);
+  if (res.status === 401) {
+    const body = await res.clone().json().catch(() => ({}));
+    if (body.code === 'ACCESS_CODE_REQUIRED') {
+      const code = window.prompt('This doc generator is locked. Enter the access code:');
+      if (code) {
+        const u = await apiFetch(backendUrl + '/api/unlock', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+        if (u.ok) res = await fetch(url, opts);
+        else window.alert('That access code is not right.');
+      }
     }
-  } catch (e) {
-    backendUrl = window.location.protocol.startsWith('http') ? window.location.origin : '';
+  }
+  return res;
+}
+
+async function loadBackendUrl() {
+  // When the page is opened from the generator itself (http://localhost:3000 or the Render URL),
+  // always talk to that same server. The saved URL is only used if the file is opened from disk.
+  if (window.location.protocol.startsWith('http')) {
+    backendUrl = window.location.origin;
+  } else {
+    try {
+      const res = await localDB.get('studio5_backend_url');
+      backendUrl = res && res.value ? res.value : '';
+    } catch (e) { backendUrl = ''; }
   }
   document.getElementById('backend-url').value = backendUrl;
 }
@@ -851,7 +878,7 @@ async function generateViaBackend(endpoint, payload, filenamePrefix, statusElId)
   }
   statusEl.textContent = 'Generating...';
   try {
-    const res = await fetch(backendUrl + endpoint, {
+    const res = await apiFetch(backendUrl + endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -862,9 +889,12 @@ async function generateViaBackend(endpoint, payload, filenamePrefix, statusElId)
       return { ok: false };
     }
     const docNumber = res.headers.get('X-Document-Number') || null;
+    // Numbered on this PC without the internet; the server uploads it to the cloud ledger when online again.
+    const offlineNote = res.headers.get('X-Offline') === '1'
+      ? ' <span style="color:#b45309; font-weight:600;">(no internet — numbered on this PC, will upload automatically)</span>' : '';
     const blob = await res.blob();
     const docTypeKey = endpoint.includes('proforma') ? 'pi' : (endpoint.includes('purchase') ? 'po' : (endpoint.includes('challan') ? 'challan' : 'inv'));
-    const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '') || new Date().toISOString().slice(0, 10);
+    const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || todayIST()).replace(/[^\d-]/g, '') || todayIST();
 
     let filename = '';
     const disp = res.headers.get('Content-Disposition');
@@ -885,7 +915,7 @@ async function generateViaBackend(endpoint, payload, filenamePrefix, statusElId)
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    statusEl.innerHTML = `✓ Generated ${docNumber || filename} — Saved in folder: ${dateStr}/ <button type="button" class="btn secondary" style="padding:2px 7px; font-size:11px; margin-left:6px; vertical-align:middle;" onclick="openDatedFolder('${docTypeKey}', '${dateStr}')">📂 Open Folder</button>`;
+    statusEl.innerHTML = `✓ Generated ${docNumber || filename} — Saved in folder: ${dateStr}/ <button type="button" class="btn secondary" style="padding:2px 7px; font-size:11px; margin-left:6px; vertical-align:middle;" onclick="openDatedFolder('${docTypeKey}', '${dateStr}')">📂 Open Folder</button>${offlineNote}`;
     return { ok: true, docNumber };
   } catch (e) {
     statusEl.textContent = 'Error: could not reach backend (' + e.message + ')';
@@ -893,11 +923,16 @@ async function generateViaBackend(endpoint, payload, filenamePrefix, statusElId)
   }
 }
 
+const NUMBER_DATE_FIELD = { po: 'gen-podate', pi: 'pi-date', invoice: 'inv-date', challan: 'challan-date' };
 async function fetchNextNumberPreview(docType, addressKey) {
   if (!backendUrl) return null;
   try {
-    const qs = addressKey ? ('?address=' + encodeURIComponent(addressKey)) : '';
-    const res = await fetch(backendUrl + '/next-number/' + docType + qs);
+    const params = new URLSearchParams();
+    if (addressKey) params.set('address', addressKey);
+    const dateEl = document.getElementById(NUMBER_DATE_FIELD[docType]);
+    if (dateEl && dateEl.value) params.set('date', dateEl.value);   // the tax-invoice year comes from its date
+    const qs = params.toString() ? '?' + params.toString() : '';
+    const res = await apiFetch(backendUrl + '/next-number/' + docType + qs);
     if (!res.ok) return null;
     const data = await res.json();
     return data.number || null;
@@ -907,6 +942,13 @@ async function fetchNextNumberPreview(docType, addressKey) {
 // Autofills a document-number field with the next expected number, but
 // only when the field is empty or still holds a previous autofilled value
 // (never overwrites something the user actually typed).
+// The number to send: blank while it is still the untouched preview, so the server allocates it (with the
+// financial year of the document's own date); whatever the person typed otherwise.
+function numberToSend(fieldId) {
+  const el = document.getElementById(fieldId);
+  return el && el.dataset.autofilled === '1' ? '' : (el ? el.value.trim() : '');
+}
+
 async function autofillNumber(fieldId, docType, addressKey) {
   const field = document.getElementById(fieldId);
   if (!field) return;
@@ -929,7 +971,7 @@ async function loadRecentDocuments() {
   statusEl.textContent = 'Loading...';
   try {
     const qs = type ? ('?type=' + type) : '';
-    const res = await fetch(backendUrl + '/documents' + qs);
+    const res = await apiFetch(backendUrl + '/documents' + qs);
     if (!res.ok) { statusEl.textContent = 'Could not load documents.'; return; }
     const docs = await res.json();
     tbody.innerHTML = '';
@@ -945,7 +987,7 @@ async function loadRecentDocuments() {
         ? '<span style="color:#b0413e; font-weight:600;">Void' + (d.void_reason ? ' — ' + escapeHtml(d.void_reason) : '') + '</span>'
         : '<span style="color:#1a7f37; font-weight:600;">Issued</span>';
       const voidBtn = d.status === 'issued'
-        ? `<button class="btn secondary small" onclick="voidDocumentPrompt('${d.doc_type}', '${escapeHtml(d.doc_number)}')">Mark void</button>`
+        ? `<button class="btn secondary small" onclick="voidDocumentPrompt(${jsArg(d.doc_type)}, ${jsArg(d.doc_number)})">Mark void</button>`
         : '';
       tr.innerHTML =
         '<td style="font-family:monospace;">' + escapeHtml(d.doc_number) + '</td>' +
@@ -966,7 +1008,7 @@ async function voidDocumentPrompt(docType, docNumber) {
   const reason = prompt('Why is "' + docNumber + '" being voided? (e.g. rejected by client)');
   if (reason === null) return;
   try {
-    const res = await fetch(backendUrl + '/void-document', {
+    const res = await apiFetch(backendUrl + '/void-document', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ doc_type: docType, doc_number: docNumber, reason })
@@ -1236,6 +1278,13 @@ async function saveCurrentAsParty(prefix) {
 function saveCurrentAsBuyer(prefix) { return saveCurrentAsParty(prefix); }
 function saveCurrentAsSite(prefix) { return saveCurrentAsParty(prefix); }
 
+// A value placed inside an inline handler, e.g. onclick="fn(${jsArg(x)})": a JSON string literal,
+// then HTML-escaped for the attribute. (escapeHtml alone is not enough there — the browser decodes
+// &#039; back to ' before running the code.)
+function jsArg(value) {
+  return escapeHtml(JSON.stringify(String(value == null ? '' : value)));
+}
+
 function escapeHtml(str) {
   if (str == null) return '';
   return String(str)
@@ -1256,7 +1305,7 @@ const extraCols = { po: [], pi: [], inv: [], challan: [] };
 
 function extraColsHeaderHtml(docType) {
   return (extraCols[docType] || []).map(c =>
-    `<th data-extra-col="${c.key}">${escapeHtml(c.label)} <span onclick="removeExtraColumn('${docType}','${c.key}')" title="Remove column" style="cursor:pointer; color:#b0413e; font-weight:700;">✕</span></th>`
+    `<th data-extra-col="${escapeHtml(c.key)}">${escapeHtml(c.label)} <span onclick="removeExtraColumn(${jsArg(docType)},${jsArg(c.key)})" title="Remove column" style="cursor:pointer; color:#b0413e; font-weight:700;">✕</span></th>`
   ).join('');
 }
 
@@ -1299,7 +1348,7 @@ function syncHeaderExtraCols(theadRow, docType) {
     if (theadRow.querySelector(`th[data-extra-col="${c.key}"]`)) return;
     const th = document.createElement('th');
     th.dataset.extraCol = c.key;
-    th.innerHTML = `${escapeHtml(c.label)} <span onclick="removeExtraColumn('${docType}','${c.key}')" title="Remove column" style="cursor:pointer; color:#b0413e; font-weight:700;">✕</span>`;
+    th.innerHTML = `${escapeHtml(c.label)} <span onclick="removeExtraColumn(${jsArg(docType)},${jsArg(c.key)})" title="Remove column" style="cursor:pointer; color:#b0413e; font-weight:700;">✕</span>`;
     if (anchorTh) theadRow.insertBefore(th, anchorTh);
     else theadRow.appendChild(th);
   });
@@ -1315,7 +1364,7 @@ function syncRowExtraCols(tr, docType) {
     if (tr.querySelector(`td[data-extra-col="${c.key}"]`)) return;
     const td = document.createElement('td');
     td.dataset.extraCol = c.key;
-    td.innerHTML = `<input class="f-extra" data-extra-key="${c.key}" style="width:70px;">`;
+    td.innerHTML = `<input class="f-extra" data-extra-key="${escapeHtml(c.key)}" style="width:70px;">`;
     if (amtTd) tr.insertBefore(td, amtTd);
     else tr.appendChild(td);
   });
@@ -2023,7 +2072,7 @@ function numberToWordsIndian(num) {
   let rest = num % 1000;
   let parts = [];
   if (crore) parts.push(threeDigit(crore) + " Crore");
-  if (lakh) parts.push(threeDigit(lakh) + " Lac");
+  if (lakh) parts.push(threeDigit(lakh) + " Lakh");
   if (thousand) parts.push(threeDigit(thousand) + " Thousand");
   if (rest) parts.push(threeDigit(rest));
   return parts.join(" ") + " Only";
@@ -2055,7 +2104,7 @@ function recalcPO() {
   if (subEl) subEl.textContent = sub.toFixed(2);
   if (gstEl) gstEl.textContent = gstAmt.toFixed(2);
   if (grandEl) grandEl.innerHTML = '<strong>' + grand.toFixed(2) + '</strong>';
-  if (wordsEl) wordsEl.textContent = 'Amount in words: ' + numberToWordsIndian(grand) + ' Rupees';
+  if (wordsEl) wordsEl.textContent = 'Amount in words: Rupees ' + numberToWordsIndian(grand);
 }
 
 let currentPreviewDoc = null;
@@ -2536,7 +2585,7 @@ function buildDescriptiveDocFilename(docType, payload, docNo, ext) {
     dateVal = payload && payload.challan_date;
   }
 
-  const dateStr = (dateVal || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '') || new Date().toISOString().slice(0, 10);
+  const dateStr = (dateVal || todayIST()).replace(/[^\d-]/g, '') || todayIST();
   const tag = getDescriptiveTag(docType, payload);
   const cleanDocNo = String(docNo || 'DRAFT').replace(/[\\/]/g, '-').trim();
 
@@ -2555,7 +2604,7 @@ async function openDatedFolder(docType, dateVal) {
     return;
   }
   try {
-    const res = await fetch(backendUrl + '/api/open-folder', {
+    const res = await apiFetch(backendUrl + '/api/open-folder', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ docType, date: dateVal })
@@ -2588,7 +2637,7 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
 
   if (backendUrl) {
     try {
-      const res = await fetch(backendUrl + endpoint + '?format=json', {
+      const res = await apiFetch(backendUrl + endpoint + '?format=json', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -2615,7 +2664,7 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
 
   const currentDocNo = allocatedDocNo || payload.po_no || payload.pi_no || payload.invoice_no || payload.challan_no || 'DRAFT';
   const cleanFilename = buildDescriptiveDocFilename(docType, payload, currentDocNo, 'pdf');
-  const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '') || new Date().toISOString().slice(0, 10);
+  const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || todayIST()).replace(/[^\d-]/g, '') || todayIST();
   const sectionTag = getDescriptiveTag(docType, payload);
 
   statusEl.textContent = 'Rendering PDF...';
@@ -2691,7 +2740,7 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
         fd.append('docNumber', currentDocNo);
         fd.append('sectionName', sectionTag);
         fd.append('filename', cleanFilename);
-        const saveRes = await fetch(backendUrl + '/api/save-generated-doc', {
+        const saveRes = await apiFetch(backendUrl + '/api/save-generated-doc', {
           method: 'POST',
           body: fd
         });
@@ -2748,7 +2797,7 @@ async function downloadCurrentPreviewPDF() {
 
   const docNo = payload.po_no || payload.pi_no || payload.invoice_no || payload.challan_no || 'doc';
   const cleanFilename = buildDescriptiveDocFilename(docType, payload, docNo, 'pdf');
-  const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || new Date().toISOString().slice(0, 10)).replace(/[^\d-]/g, '') || new Date().toISOString().slice(0, 10);
+  const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || todayIST()).replace(/[^\d-]/g, '') || todayIST();
   const sectionTag = getDescriptiveTag(docType, payload);
 
   // Create clean off-screen renderer for consistent high-quality output
@@ -2818,7 +2867,7 @@ async function downloadCurrentPreviewPDF() {
         fd.append('docNumber', docNo);
         fd.append('sectionName', sectionTag);
         fd.append('filename', cleanFilename);
-        await fetch(backendUrl + '/api/save-generated-doc', {
+        await apiFetch(backendUrl + '/api/save-generated-doc', {
           method: 'POST',
           body: fd
         });
@@ -2924,7 +2973,7 @@ function getPOPayload() {
 
   return {
     document_type: "Purchase Order",
-    po_no: document.getElementById('gen-pono').value,
+    po_no: numberToSend('gen-pono'),
     po_date: document.getElementById('gen-podate').value,
     issuing_address: addr,
     issuing_address_key: addrKey,
@@ -3114,11 +3163,14 @@ function recalcPI() {
   });
   const gstPct = parseFloat(document.getElementById('pi-gst-pct').value) || 0;
   const gstAmt = Math.round(projectTotal * gstPct) / 100;
-  const grand = projectTotal + gstAmt;
+  const exact = Math.round((projectTotal + gstAmt) * 100) / 100;
+  const grand = Math.round(exact);
+  const roundOff = Math.round((grand - exact) * 100) / 100;
+  document.getElementById('pi-round-off').textContent = (roundOff > 0 ? '+' : '') + roundOff.toFixed(2);
   document.getElementById('pi-project-total').textContent = projectTotal.toFixed(2);
   document.getElementById('pi-gst-amt').textContent = gstAmt.toFixed(2);
   document.getElementById('pi-grand-total').innerHTML = '<strong>' + grand.toFixed(2) + '</strong>';
-  document.getElementById('pi-words-preview').textContent = 'Amount in words: ' + numberToWordsIndian(grand) + ' Rupees';
+  document.getElementById('pi-words-preview').textContent = 'Amount in words: Rupees ' + numberToWordsIndian(grand);
 }
 
 function getPIPayload() {
@@ -3152,7 +3204,7 @@ function getPIPayload() {
   };
   return {
     document_type: "Proforma Invoice",
-    pi_no: document.getElementById('pi-no').value,
+    pi_no: numberToSend('pi-no'),
     pi_date: document.getElementById('pi-date').value,
     issuing_address: addr,
     issuing_address_key: addrKey,
@@ -3326,11 +3378,22 @@ function recalcINV() {
   });
   const gstPct = parseFloat(document.getElementById('inv-gst-pct').value) || 0;
   const gstAmt = Math.round(projectTotal * gstPct) / 100;
-  const grand = projectTotal + gstAmt;
+  const exact = Math.round((projectTotal + gstAmt) * 100) / 100;
+  const grand = Math.round(exact);
+  const roundOff = Math.round((grand - exact) * 100) / 100;
+  document.getElementById('inv-round-off').textContent = (roundOff > 0 ? '+' : '') + roundOff.toFixed(2);
+  // CGST + SGST when the place of supply is the issuer's state, otherwise IGST (decision 0002)
+  const issuerState = ((addresses[document.getElementById('inv-address').value] || {}).gstin || '').slice(0, 2);
+  const typedPos = (document.getElementById('inv-place-of-supply').value || '').trim();
+  const buyerGstin = (document.getElementById('inv-buyer-gstin').value || '').trim();
+  const pos = /^\d{2}$/.test(typedPos) ? typedPos : (/^\d{2}/.test(buyerGstin) ? buyerGstin.slice(0, 2) : issuerState);
+  document.getElementById('inv-gst-split').textContent = pos && pos === issuerState
+    ? 'CGST ' + (Math.floor(gstAmt * 50) / 100).toFixed(2) + ' + SGST ' + (gstAmt - Math.floor(gstAmt * 50) / 100).toFixed(2)
+    : 'IGST ' + gstAmt.toFixed(2) + (pos ? ' (place of supply ' + pos + ')' : '');
   document.getElementById('inv-project-total').textContent = projectTotal.toFixed(2);
   document.getElementById('inv-gst-amt').textContent = gstAmt.toFixed(2);
   document.getElementById('inv-grand-total').innerHTML = '<strong>' + grand.toFixed(2) + '</strong>';
-  document.getElementById('inv-words-preview').textContent = 'Amount in words: ' + numberToWordsIndian(grand) + ' Rupees';
+  document.getElementById('inv-words-preview').textContent = 'Amount in words: Rupees ' + numberToWordsIndian(grand);
 }
 
 function getINVPayload() {
@@ -3364,7 +3427,7 @@ function getINVPayload() {
   };
   return {
     document_type: "Invoice",
-    invoice_no: document.getElementById('inv-no').value,
+    invoice_no: numberToSend('inv-no'),
     invoice_date: document.getElementById('inv-date').value,
     issuing_address: addr,
     issuing_address_key: addrKey,
@@ -3374,6 +3437,8 @@ function getINVPayload() {
       gstin: document.getElementById('inv-buyer-gstin').value,
       attn: document.getElementById('inv-buyer-attn').value
     },
+    place_of_supply: (document.getElementById('inv-place-of-supply').value || '').trim(),
+    sac_code: (document.getElementById('inv-sac').value || '').trim(),
     subject: document.getElementById('inv-subject').value,
     sections: sections,
     extra_columns: buildExtraColumnsPayload('inv'),
@@ -3481,7 +3546,7 @@ function getChallanPayload() {
   return {
     document_type: "Delivery Challan",
     extra_columns: buildExtraColumnsPayload('challan'),
-    challan_no: document.getElementById('challan-no').value,
+    challan_no: numberToSend('challan-no'),
     challan_date: document.getElementById('challan-date').value,
     vehicle_no: document.getElementById('challan-vehicle').value,
     issuing_address: addr,
@@ -3695,7 +3760,7 @@ async function checkServerConfigStatus() {
     const effectiveBackend = (typeof backendUrl !== 'undefined' && backendUrl)
       ? backendUrl
       : (window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000');
-    const res = await fetch(`${effectiveBackend}/api/config-status`);
+    const res = await apiFetch(`${effectiveBackend}/api/config-status`);
     if (res.ok) {
       const status = await res.json();
       if (status.gemini) {
@@ -3797,7 +3862,7 @@ function renderCatalogModalCategories() {
   if (!container) return;
   const cats = getCatalogCategories();
   container.innerHTML = cats.map(c => `
-    <span class="cat-pill ${c === activeCatalogCategory ? 'active' : ''}" onclick="selectCatalogCategory('${escapeHtml(c)}')">${escapeHtml(c)}</span>
+    <span class="cat-pill ${c === activeCatalogCategory ? 'active' : ''}" onclick="selectCatalogCategory(${jsArg(c)})">${escapeHtml(c)}</span>
   `).join('');
 }
 
@@ -3849,7 +3914,7 @@ function renderCatalogModalItems() {
           </div>
         ` : ''}
       </div>
-      <button type="button" class="btn small" style="${btnStyle} padding:6px 14px; font-size:12px;" onclick="addCatalogItemToActiveSection('${it.id}', this)">${btnLabel}</button>
+      <button type="button" class="btn small" style="${btnStyle} padding:6px 14px; font-size:12px;" onclick="addCatalogItemToActiveSection(${jsArg(it.id)}, this)">${btnLabel}</button>
     </div>
   `;
   }).join('');
@@ -3901,7 +3966,7 @@ function renderLibCatalog() {
   const cats = getCatalogCategories();
   if (filterContainer) {
     filterContainer.innerHTML = cats.map(c => `
-      <span class="cat-pill ${c === activeCatalogCategory ? 'active' : ''}" onclick="activeCatalogCategory='${escapeHtml(c)}'; renderLibCatalog();">${escapeHtml(c)}</span>
+      <span class="cat-pill ${c === activeCatalogCategory ? 'active' : ''}" onclick="activeCatalogCategory=${jsArg(c)}; renderLibCatalog();">${escapeHtml(c)}</span>
     `).join('');
   }
   const filtered = catalogItems.filter(it => activeCatalogCategory === 'All' || it.category === activeCatalogCategory);
@@ -3913,7 +3978,7 @@ function renderLibCatalog() {
           <span style="font-weight:600; color:var(--accent);">${escapeHtml(it.category)}</span> &nbsp;·&nbsp; ₹${it.rate} / ${escapeHtml(it.uom)}
         </div>
       </div>
-      <button class="btn secondary small" style="color:#b0413e; border-color:#b0413e; padding:4px 8px; font-size:11px;" onclick="deleteCatalogItem('${it.id}')">✕</button>
+      <button class="btn secondary small" style="color:#b0413e; border-color:#b0413e; padding:4px 8px; font-size:11px;" onclick="deleteCatalogItem(${jsArg(it.id)})">✕</button>
     </div>
   `).join('');
 }
@@ -4203,12 +4268,12 @@ loadBuyers();
 loadSites();
 watchExtraColumnOrder();
 addPOSection();
-document.getElementById('gen-podate').valueAsDate = new Date();
-document.getElementById('pi-date').valueAsDate = new Date();
+document.getElementById('gen-podate').value = todayIST();
+document.getElementById('pi-date').value = todayIST();
 addPISection();
-document.getElementById('inv-date').valueAsDate = new Date();
+document.getElementById('inv-date').value = todayIST();
 addINVSection();
-document.getElementById('challan-date').valueAsDate = new Date();
+document.getElementById('challan-date').value = todayIST();
 addChallanItemRow();
 
 // Restore any in-progress drafts (survives accidental mobile browser reload), then start autosaving.

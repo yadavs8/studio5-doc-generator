@@ -31,10 +31,11 @@ const cookieValue = (req, name) => {
   return m ? decodeURIComponent(m[1]) : null;
 };
 
-function createApp({ supabase = null, env = process.env } = {}) {
+function createApp({ supabase = null, local = null, env = process.env } = {}) {
   const app = express();
   app.disable("x-powered-by");
-  const numbering = createNumbering(supabase);
+  const numbering = createNumbering(supabase, { local });
+  app.locals.numbering = numbering;
   const ACCESS_CODE = env.ACCESS_CODE ? String(env.ACCESS_CODE) : null;
   const allowedOrigins = new Set(String(env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean));
 
@@ -51,7 +52,7 @@ function createApp({ supabase = null, env = process.env } = {}) {
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-access-code, x-record-only");
-      res.setHeader("Access-Control-Expose-Headers", "X-Document-Number, Content-Disposition");
+      res.setHeader("Access-Control-Expose-Headers", "X-Document-Number, X-Offline, Content-Disposition");
     }
     if (req.method === "OPTIONS") return res.sendStatus(ok ? 204 : 403);
     if (!ok) return res.status(403).json({ error: "This server only accepts requests from its own page." });
@@ -174,7 +175,7 @@ function createApp({ supabase = null, env = process.env } = {}) {
       try {
         const payload = validateAndPrice(k.type, req.body);
         const recordOnly = req.query.format === "json" || req.headers["x-record-only"] === "true";
-        const { docNumber, file } = await numbering.issue(k.type, {
+        const { docNumber, file, offline } = await numbering.issue(k.type, {
           docNumber: payload[k.numberField],
           addressKey: payload.issuing_address_key,
           date: payload[DATE_FIELD[k.type]],
@@ -184,7 +185,9 @@ function createApp({ supabase = null, env = process.env } = {}) {
           build: recordOnly ? null : (num) => k.gen({ ...payload, [k.numberField]: num }, logo, stamp),
         });
         payload[k.numberField] = docNumber;
-        if (recordOnly) return res.json({ success: true, docNumber, payload });
+        // Numbered on this PC without the internet: it will be uploaded to the cloud ledger automatically.
+        if (offline) res.setHeader("X-Offline", "1");
+        if (recordOnly) return res.json({ success: true, docNumber, payload, offline: !!offline });
         const filename = descriptiveName(k.type, payload, docNumber);
         autoSave(k.type, payload, filename, file);
         res.attachment(filename);
@@ -259,6 +262,14 @@ function createApp({ supabase = null, env = process.env } = {}) {
       if (e.status) return res.status(e.status).json({ error: e.message });
       fail(res, e);
     }
+  });
+
+  // What was numbered offline and is still waiting to be uploaded, and any conflicts found when uploading.
+  app.get("/api/offline-status", async (req, res) => {
+    try {
+      if (req.query.sync === "1") await numbering.sync();
+      res.json({ offlineLedger: !!local, ...numbering.status() });
+    } catch (e) { fail(res, e); }
   });
 
   app.get("/api/config-status", (req, res) => {

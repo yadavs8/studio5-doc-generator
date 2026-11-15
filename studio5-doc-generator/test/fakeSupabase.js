@@ -1,6 +1,9 @@
 // A tiny in-memory stand-in for the two ledger tables and the two numbering functions.
 function fakeSupabase() {
   const db = { doc_number_sequences: [], generated_documents: [] };
+  const state = { offline: false };
+  // What supabase-js returns when there is no internet: an error object, not a throw.
+  const NET = { data: null, error: { message: "TypeError: fetch failed", details: "getaddrinfo ENOTFOUND" } };
   function query(table) {
     let rows = () => db[table];
     const filters = [];
@@ -16,6 +19,7 @@ function fakeSupabase() {
       then(res, rej) { return run().then(res, rej); },
     };
     async function run() {
+      if (state.offline) return NET;
       if (op === "insert") {
         if (table === "generated_documents" && db[table].some((r) => r.doc_type === values.doc_type && r.doc_number === values.doc_number)) {
           return { data: null, error: { code: "23505", message: "duplicate key" } };
@@ -34,7 +38,9 @@ function fakeSupabase() {
   return {
     db,
     from: query,
+    state,
     async rpc(name, args) {
+      if (state.offline) return NET;
       const seqs = db.doc_number_sequences;
       let row = seqs.find((r) => r.doc_type === args.p_doc_type && r.scope_key === args.p_scope_key);
       if (name === "fn_allocate_document_number") {
