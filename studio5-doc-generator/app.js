@@ -39,6 +39,18 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
   const ACCESS_CODE = env.ACCESS_CODE ? String(env.ACCESS_CODE) : null;
   const allowedOrigins = new Set(String(env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean));
 
+  // ── Which host names this server answers to (blocks DNS rebinding) ───────
+  // A web page can point its own domain at 127.0.0.1 and then look "same-origin" to the generator on the
+  // PC. Answering only to known host names stops that. Render's own name is added automatically.
+  const allowedHosts = new Set(["localhost", "127.0.0.1", "[::1]",
+    ...String(env.ALLOWED_HOSTS || "").split(","), String(env.RENDER_EXTERNAL_HOSTNAME || "")]
+    .map((h) => h.trim().toLowerCase()).filter(Boolean));
+  app.use((req, res, next) => {
+    const host = String(req.headers.host || "").toLowerCase().replace(/:\d+$/, "");
+    if (allowedHosts.has(host)) return next();
+    res.status(421).json({ error: `This server does not answer to "${host}". Add it to ALLOWED_HOSTS if it is yours.` });
+  });
+
   // ── Who may call ────────────────────────────────────────────────────────
   // Browsers send Origin on cross-site requests. Only this app's own page (same host) or an origin the
   // owner listed in ALLOWED_ORIGINS gets in; everything else is refused, so a website the owner happens

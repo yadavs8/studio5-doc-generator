@@ -123,3 +123,14 @@ test("optional access code: off by default, required when ACCESS_CODE is set", a
   assert.equal((await fetch(base + "/documents", { headers: { cookie } })).status, 200);
   assert.equal((await post("/api/unlock", { code: "wrong" })).status, 401);
 });
+
+test("DNS rebinding: requests for an unexpected host name are refused", async () => {
+  // fetch() will not send a custom Host header, so use a raw request.
+  const http = require("node:http");
+  const status = (host) => new Promise((resolve, reject) => {
+    const u = new URL(base + "/documents");
+    http.get({ hostname: u.hostname, port: u.port, path: u.pathname, headers: { host } }, (res) => { res.resume(); resolve(res.statusCode); }).on("error", reject);
+  });
+  assert.equal(await status("evil.example:3000"), 421);
+  assert.notEqual(await status(`localhost:${new URL(base).port}`), 421);
+});
