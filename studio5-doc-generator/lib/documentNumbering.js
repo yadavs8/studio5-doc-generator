@@ -260,6 +260,7 @@ function createNumbering(supabase, { local = null } = {}) {
     if (!supabase) return { uploaded: 0, conflicts: 0, pending: local.pendingCount() };
     let uploaded = 0, conflicts = 0;
     for (const item of local.queue()) {
+      if (!["insert", "bump", "void"].includes(item.op)) continue; // other jobs (PO tracker) are done by their own sync
       try {
         if (item.op === "insert") {
           try {

@@ -13,9 +13,10 @@ const generatePO = require("./generators/generate_po.js");
 const generatePI = require("./generators/generate_pi.js");
 const generateInvoice = require("./generators/generate_invoice.js");
 const generateChallan = require("./generators/generate_challan.js");
-const { createNumbering, todayIST } = require("./lib/documentNumbering.js");
+const { createNumbering, todayIST, isNetworkError } = require("./lib/documentNumbering.js");
 const { validateAndPrice, isRealDate, DATE_FIELD } = require("./lib/validate.js");
 const { getExtractionPrompt, extractItems } = require("./lib/extract.js");
+const { createTracker, isUuid } = require("./lib/tracker.js");
 
 const ROOT = __dirname;
 const SUBDIRS = { pi: "proforma_invoices", po: "purchase_orders", inv: "invoices", invoice: "invoices", challan: "challans" };
@@ -38,6 +39,8 @@ function createApp({ supabase = null, local = null, env = process.env } = {}) {
   app.disable("x-powered-by");
   const numbering = createNumbering(supabase, { local });
   app.locals.numbering = numbering;
+  const tracker = createTracker(supabase, { local });
+  app.locals.tracker = tracker;
   const ACCESS_CODE = env.ACCESS_CODE ? String(env.ACCESS_CODE) : null;
   const allowedOrigins = new Set(String(env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean));
 
@@ -183,8 +186,10 @@ if(r.ok)location.reload();else document.getElementById('m').textContent=(await r
     try {
       const dir = targetFolder(docType, payload[DATE_FIELD[docType]]);
       fs.writeFileSync(path.join(dir, filename), buffer);
+      return path.join(dir, filename);
     } catch (e) {
       console.warn(`[autosave] could not save ${filename}: ${e.message}`);
+      return null;
     }
   }
 
@@ -207,7 +212,11 @@ if(r.ok)location.reload();else document.getElementById('m').textContent=(await r
     try {
       const { doc_type, doc_number, reason } = req.body || {};
       if (!doc_type || !doc_number) return res.status(400).json({ error: "doc_type and doc_number are required." });
-      res.json(await numbering.voidDocument(doc_type, String(doc_number), reason ? String(reason).slice(0, 500) : null));
+      const why = reason ? String(reason).slice(0, 500) : null;
+      const doc = await numbering.voidDocument(doc_type, String(doc_number), why);
+      // Linked to the PO tracker: cancel it there too (a refusal is explained, the void here stands).
+      const linked = await tracker.cancel(doc_type, String(doc_number), why);
+      res.json(linked ? { ...doc, tracker: linked } : doc);
     } catch (e) { fail(res, e); }
   });
 
@@ -226,6 +235,8 @@ if(r.ok)location.reload();else document.getElementById('m').textContent=(await r
     app.post(`/generate/${k.route}`, async (req, res) => {
       try {
         const payload = validateAndPrice(k.type, req.body);
+        const siteId = payload.tracker_site_id || null;
+        if (siteId && !isUuid(siteId)) return res.status(400).json({ error: "The PO tracker site was not recognised. Pick the site again.", code: "INVALID_PAYLOAD" });
         const recordOnly = req.query.format === "json" || req.headers["x-record-only"] === "true";
         const { docNumber, file, offline } = await numbering.issue(k.type, {
           docNumber: payload[k.numberField],
@@ -239,9 +250,21 @@ if(r.ok)location.reload();else document.getElementById('m').textContent=(await r
         payload[k.numberField] = docNumber;
         // Numbered on this PC without the internet: it will be uploaded to the cloud ledger automatically.
         if (offline) res.setHeader("X-Offline", "1");
-        if (recordOnly) return res.json({ success: true, docNumber, payload, offline: !!offline });
+        // Picked a PO tracker site: the PI / invoice appears there too (never fails the document itself).
+        let linked = siteId
+          ? await tracker.record({ docType: k.type, docNumber, siteId, payload, piId: payload.tracker_pi_id, docQueued: !!offline })
+          : null;
+        if (recordOnly) return res.json({ success: true, docNumber, payload, offline: !!offline, tracker: linked });
         const filename = descriptiveName(k.type, payload, docNumber);
-        autoSave(k.type, payload, filename, file);
+        const savedAt = autoSave(k.type, payload, filename, file);
+        if (linked && linked.status !== "failed") {
+          const filed = await tracker.attach({ docType: k.type, docNumber, buffer: file, filename, filePath: savedAt });
+          if (filed && filed.status === "failed") linked = { status: linked.status, message: filed.message };
+        }
+        if (linked) {
+          res.setHeader("X-Tracker", linked.status);
+          if (linked.message) res.setHeader("X-Tracker-Message", encodeURIComponent(linked.message));
+        }
         res.attachment(filename);
         res.type("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         res.setHeader("X-Document-Number", docNumber);
@@ -252,7 +275,7 @@ if(r.ok)location.reload();else document.getElementById('m').textContent=(await r
 
   // ── Files kept on this PC ───────────────────────────────────────────────
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
-  app.post("/api/save-generated-doc", upload.single("file"), (req, res) => {
+  app.post("/api/save-generated-doc", upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file provided." });
       const docType = has(SUBDIRS, req.body.docType) ? req.body.docType : "pi";
@@ -260,7 +283,12 @@ if(r.ok)location.reload();else document.getElementById('m').textContent=(await r
       const full = safeFileIn(dir, req.body.filename || req.file.originalname);
       if (!full) return res.status(400).json({ error: "The file name must be a plain .pdf or .docx name." });
       fs.writeFileSync(full, req.file.buffer);
-      res.json({ success: true, folder: path.relative(docsBase(), dir), dateFolder: path.basename(dir), filename: path.basename(full) });
+      // A PDF of a PI / invoice linked to the PO tracker is filed there as well.
+      const kind = docType === "inv" ? "invoice" : docType;
+      const linked = req.body.docNumber
+        ? await tracker.attach({ docType: kind, docNumber: String(req.body.docNumber).slice(0, 40), buffer: req.file.buffer, filename: path.basename(full), filePath: full })
+        : null;
+      res.json({ success: true, folder: path.relative(docsBase(), dir), dateFolder: path.basename(dir), filename: path.basename(full), tracker: linked });
     } catch (e) { fail(res, e); }
   });
 
@@ -320,8 +348,25 @@ if(r.ok)location.reload();else document.getElementById('m').textContent=(await r
   app.get("/api/offline-status", (req, res) => res.json({ offlineLedger: !!local, ...numbering.status() }));
   app.post("/api/sync", async (req, res) => {
     try {
-      res.json({ offlineLedger: !!local, ...(await numbering.sync()), ...numbering.status() });
+      const numbers = await numbering.sync();
+      res.json({ offlineLedger: !!local, ...numbers, ...(await tracker.sync()), ...numbering.status() });
     } catch (e) { fail(res, e); }
+  });
+
+  // ── The PO tracker's sites (picker) and a site's open PIs (make an invoice from one) ──
+  app.get("/api/tracker/sites", async (req, res) => {
+    try {
+      if (!tracker.available() && !local) return res.json({ available: false, sites: [], offline: false });
+      res.json({ available: tracker.available(), ...(await tracker.sites()) });
+    } catch (e) { fail(res, e); }
+  });
+  app.get("/api/tracker/open-pis", async (req, res) => {
+    try {
+      res.json(await tracker.openPis(String(req.query.site || "")));
+    } catch (e) {
+      if (isNetworkError(e)) return res.json([]); // offline: the invoice can still be made, just not linked to a PI
+      fail(res, e);
+    }
   });
 
   app.get("/api/config-status", (req, res) => {

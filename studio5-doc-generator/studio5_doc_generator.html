@@ -424,6 +424,9 @@
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">2. Buyer's Details</h2>
       </div>
+      <label style="margin-top:8px;">PO tracker site <span style="font-weight:400; color:var(--muted);">(files this PI under the project in the PO tracker)</span></label>
+      <select id="pi-tracker-site" onchange="applyTrackerSite('pi')"><option value="">— Not in the PO tracker —</option></select>
+      <div class="footer-note" id="pi-tracker-note" style="margin-top:2px;"></div>
       <label style="margin-top:8px;">Select a saved client / buyer / site</label>
       <select id="pi-buyer-select" onchange="applyPartySelection('pi')"></select>
       <div class="row2">
@@ -509,6 +512,11 @@
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">2. Buyer's Details</h2>
       </div>
+      <label style="margin-top:8px;">PO tracker site <span style="font-weight:400; color:var(--muted);">(files this tax invoice under the project in the PO tracker)</span></label>
+      <select id="inv-tracker-site" onchange="applyTrackerSite('inv')"><option value="">— Not in the PO tracker —</option></select>
+      <label id="inv-tracker-pi-label" style="display:none;">Made from PI <span style="font-weight:400; color:var(--muted);">(marks that PI as invoiced in the PO tracker)</span></label>
+      <select id="inv-tracker-pi" style="display:none;"><option value="">— Not made from a PI —</option></select>
+      <div class="footer-note" id="inv-tracker-note" style="margin-top:2px;"></div>
       <label style="margin-top:8px;">Select a saved client / buyer / site</label>
       <select id="inv-buyer-select" onchange="applyPartySelection('inv')"></select>
       <div class="row2">
@@ -890,8 +898,9 @@ async function generateViaBackend(endpoint, payload, filenamePrefix, statusElId)
     }
     const docNumber = res.headers.get('X-Document-Number') || null;
     // Numbered on this PC without the internet; the server uploads it to the cloud ledger when online again.
-    const offlineNote = res.headers.get('X-Offline') === '1'
-      ? ' <span style="color:#b45309; font-weight:600;">(no internet — numbered on this PC, will upload automatically)</span>' : '';
+    const offlineNote = (res.headers.get('X-Offline') === '1'
+      ? ' <span style="color:#b45309; font-weight:600;">(no internet — numbered on this PC, will upload automatically)</span>' : '')
+      + trackerNote(res.headers.get('X-Tracker'), res.headers.get('X-Tracker-Message') ? decodeURIComponent(res.headers.get('X-Tracker-Message')) : '');
     const blob = await res.blob();
     const docTypeKey = endpoint.includes('proforma') ? 'pi' : (endpoint.includes('purchase') ? 'po' : (endpoint.includes('challan') ? 'challan' : 'inv'));
     const dateStr = (payload.pi_date || payload.po_date || payload.invoice_date || payload.challan_date || todayIST()).replace(/[^\d-]/g, '') || todayIST();
@@ -1018,10 +1027,72 @@ async function voidDocumentPrompt(docType, docNumber) {
       alert('Could not void: ' + (err.error || res.statusText));
       return;
     }
+    const done = await res.json().catch(() => ({}));
+    if (done.tracker && done.tracker.status === 'failed') {
+      alert('Voided here. The PO tracker did not cancel it: ' + done.tracker.message);
+    } else if (done.tracker && done.tracker.status === 'queued') {
+      alert('Voided here. It will be cancelled in the PO tracker when the internet is back.');
+    }
     loadRecentDocuments();
   } catch (e) {
     alert('Error: could not reach backend (' + e.message + ')');
   }
+}
+
+// ── PO tracker link: pick the project a PI / invoice belongs to (decision 0005) ──
+let trackerSites = [];
+function trackerNote(status, message) {
+  if (!status) return '';
+  if (status === 'linked') return ' <span style="color:#15803d; font-weight:600;">· added to the PO tracker</span>';
+  if (status === 'queued') return ' <span style="color:#b45309; font-weight:600;">· will be added to the PO tracker when online</span>';
+  return ' <span style="color:#b91c1c; font-weight:600;">· not added to the PO tracker: ' + escapeHtml(message || 'unknown reason') + '</span>';
+}
+async function loadTrackerSites() {
+  if (!backendUrl) return;
+  try {
+    const res = await apiFetch(backendUrl + '/api/tracker/sites');
+    if (!res.ok) return;
+    const data = await res.json();
+    trackerSites = data.sites || [];
+    for (const t of ['pi', 'inv']) {
+      const sel = document.getElementById(t + '-tracker-site');
+      const keep = sel.value;
+      sel.innerHTML = '<option value="">— Not in the PO tracker —</option>' + trackerSites.map((x) =>
+        `<option value="${escapeHtml(x.site_id)}">${escapeHtml((x.client ? x.client.display_name + ' — ' : '') + x.site_name)}</option>`).join('');
+      sel.value = keep;
+      const note = document.getElementById(t + '-tracker-note');
+      note.textContent = !data.available && !trackerSites.length ? 'The PO tracker is not connected on this server.'
+        : data.offline ? 'No internet — showing the last saved list of sites.' : '';
+    }
+  } catch (e) { console.warn('PO tracker sites:', e); }
+}
+async function applyTrackerSite(t) {
+  const id = document.getElementById(t + '-tracker-site').value;
+  const site = trackerSites.find((x) => x.site_id === id);
+  if (site && site.client) {
+    // The tracker's client is the master: fill the buyer from it (still editable).
+    document.getElementById(t + '-buyer-name').value = site.client.name || '';
+    document.getElementById(t + '-buyer-gstin').value = site.client.gstin || '';
+    document.getElementById(t + '-buyer-address').value = site.client.address || site.site_address || '';
+    if (t === 'inv') recalcINV();
+  }
+  if (t === 'inv') await loadTrackerPis();
+}
+/** The chosen site's PIs still waiting for a tax invoice (needs the internet; hidden when there are none). */
+async function loadTrackerPis() {
+  const id = document.getElementById('inv-tracker-site').value;
+  const piSel = document.getElementById('inv-tracker-pi');
+  const show = (on) => { piSel.style.display = on ? '' : 'none'; document.getElementById('inv-tracker-pi-label').style.display = on ? '' : 'none'; };
+  piSel.innerHTML = '<option value="">— Not made from a PI —</option>';
+  show(false);
+  if (!id) return;
+  try {
+    const res = await apiFetch(backendUrl + '/api/tracker/open-pis?site=' + encodeURIComponent(id));
+    const pis = res.ok ? await res.json() : [];
+    if (!pis.length) return;
+    piSel.innerHTML += pis.map((p) => `<option value="${escapeHtml(p.pi_id)}">${escapeHtml(p.pi_number + ' — ₹' + Number(p.amount).toLocaleString('en-IN') + (p.subject ? ' — ' + p.subject : ''))}</option>`).join('');
+    show(true);
+  } catch (e) { console.warn('PO tracker PIs:', e); }
 }
 
 let addresses = {};
@@ -2634,6 +2705,7 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
 
   statusEl.textContent = 'Allocating sequence number...';
   let allocatedDocNo = null;
+  let pdfTracker = null;
 
   if (backendUrl) {
     try {
@@ -2650,6 +2722,7 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
       }
       if (res.ok) {
         const data = await res.json();
+        pdfTracker = data.tracker || null;
         // Print the server's figures (rounding, GST split, words), the same as the Word file.
         if (data.payload) Object.assign(payload, data.payload);
         if (data.docNumber) {
@@ -2754,13 +2827,15 @@ async function generateDocumentAsPDF(endpoint, payload, filenamePrefix, statusEl
         });
         if (saveRes.ok) {
           savedMsg = ` — Saved in folder: ${dateStr}/`;
+          const saved = await saveRes.json().catch(() => ({}));
+          if (saved.tracker && saved.tracker.status === 'failed' && pdfTracker) pdfTracker = saved.tracker;
         }
       } catch (saveErr) {
         console.warn('Auto-save error:', saveErr);
       }
     }
 
-    statusEl.innerHTML = `✓ Generated ${currentDocNo}${savedMsg} <button type="button" class="btn secondary" style="padding:2px 7px; font-size:11px; margin-left:6px; vertical-align:middle;" onclick="openDatedFolder('${docType}', '${dateStr}')">📂 Open Folder</button>`;
+    statusEl.innerHTML = `✓ Generated ${escapeHtml(currentDocNo)}${savedMsg} <button type="button" class="btn secondary" style="padding:2px 7px; font-size:11px; margin-left:6px; vertical-align:middle;" onclick="openDatedFolder('${docType}', '${dateStr}')">📂 Open Folder</button>${pdfTracker ? trackerNote(pdfTracker.status, pdfTracker.message) : ''}`;
 
     if (typeof loadRecentDocuments === 'function') {
       setTimeout(loadRecentDocuments, 1000);
@@ -3231,7 +3306,8 @@ function getPIPayload() {
     grand_total: parseFloat(document.getElementById('pi-grand-total').textContent.replace(/[^0-9.]/g,'')) || 0,
     amount_in_words: (document.getElementById('pi-words-preview').textContent || '').replace('Amount in words: ', ''),
     bank: banks[bankKey],
-    payment_terms: document.getElementById('pi-payment-terms').value
+    payment_terms: document.getElementById('pi-payment-terms').value,
+    tracker_site_id: document.getElementById('pi-tracker-site').value || undefined
   };
 }
 
@@ -3457,7 +3533,9 @@ function getINVPayload() {
     grand_total: parseFloat(document.getElementById('inv-grand-total').textContent.replace(/[^0-9.]/g,'')) || 0,
     amount_in_words: (document.getElementById('inv-words-preview').textContent || '').replace('Amount in words: ', ''),
     bank: banks[bankKey],
-    payment_terms: document.getElementById('inv-payment-terms').value
+    payment_terms: document.getElementById('inv-payment-terms').value,
+    tracker_site_id: document.getElementById('inv-tracker-site').value || undefined,
+    tracker_pi_id: document.getElementById('inv-tracker-pi').value || undefined
   };
 }
 
@@ -3473,9 +3551,11 @@ async function generateINV(format = 'docx') {
   }
   if (format === 'pdf') {
     await generateDocumentAsPDF('/generate/invoice', payload, 'Invoice', 'inv-gen-status', 'inv', 'inv-no');
+    if (payload.tracker_site_id) loadTrackerPis();
     return;
   }
   const result = await generateViaBackend('/generate/invoice', payload, 'Invoice', 'inv-gen-status');
+  if (payload.tracker_site_id) loadTrackerPis(); // the PI it was made from is no longer open
   if (result.ok) {
     clearDraft('inv');
     document.getElementById('inv-no').value = '';
@@ -4263,6 +4343,7 @@ function insertScannedData() {
 
 loadBackendUrl().then(() => {
   loadRecentDocuments();
+  loadTrackerSites();
   loadLibrary().then(() => {
     autofillNumber('gen-pono', 'po', document.getElementById('gen-address').value);
     autofillNumber('pi-no', 'pi', document.getElementById('pi-address').value);
